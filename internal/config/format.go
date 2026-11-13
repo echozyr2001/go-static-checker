@@ -15,17 +15,18 @@ type SourceFormat struct {
 	TabWidth           *int     `toml:"tab_width"`
 	FileNamePattern    *string  `toml:"file_name_pattern"`
 	PackageNamePattern *string  `toml:"package_name_pattern"`
-	// Omitted values preserve production-only checks without declaration spacing.
+	// Omitted values disable spacing and test checks.
 	MinBlankLinesBetweenDeclarations int  `toml:"min_blank_lines_between_declarations"`
 	IncludeTests                     bool `toml:"include_tests"`
 }
 
+// FileLayout lists required project files and directories.
 type FileLayout struct {
 	RequiredFiles       []string `toml:"required_files"`
 	RequiredDirectories []string `toml:"required_directories"`
 }
 
-// CompileNamePattern matches the whole name, even when the expression has alternatives.
+// CompileNamePattern anchors every alternative to the whole input.
 func CompileNamePattern(pattern string) (*regexp.Regexp, error) {
 	return regexp.Compile(`\A(?:` + pattern + `)\z`)
 }

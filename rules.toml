@@ -94,9 +94,7 @@ package_name_pattern = ""
 min_blank_lines_between_declarations = 1
 include_tests = true
 
-# 以下为待实现的规则草案。当前检查器会拒绝新字段，CI 失败符合预期。
-# COMMENT001 和 COMMENT004 使用已指定的 20% 与第 80 列限制；其他规则仍为初始提案。
-# 本 PR 不修改检查器。
+# 注释和文档规则用于仓库自身的 CI 检查。
 # 注释归属：doc 为紧邻声明的说明，body 为声明内部独立注释，
 # trailing 为代码同行注释。字段注释计入所属结构体或接口，
 # 局部类型与匿名函数中的注释计入外层声明；同一块内不重复计数。
