@@ -20,15 +20,17 @@ type Project struct {
 	BuildTags    []string `toml:"build_tags"`
 }
 type Rule struct {
-	ID              string  `toml:"id"`
-	Kind            string  `toml:"kind"`
-	Description     *string `toml:"description"`
-	Severity        string  `toml:"severity"`
-	Unmatched       string  `toml:"unmatched"`
-	AllowSameLayer  *bool   `toml:"allow_same_layer"`
-	AllowStdlib     *bool   `toml:"allow_stdlib"`
-	ExternalDefault string  `toml:"external_default"`
-	Layers          []Layer `toml:"layers"`
+	ID              string        `toml:"id"`
+	Kind            string        `toml:"kind"`
+	Description     *string       `toml:"description"`
+	Severity        string        `toml:"severity"`
+	Unmatched       *string       `toml:"unmatched"`
+	AllowSameLayer  *bool         `toml:"allow_same_layer"`
+	AllowStdlib     *bool         `toml:"allow_stdlib"`
+	ExternalDefault *string       `toml:"external_default"`
+	Layers          []Layer       `toml:"layers"`
+	Format          *SourceFormat `toml:"format"`
+	Layout          *FileLayout   `toml:"layout"`
 }
 type Layer struct {
 	Name          string   `toml:"name"`
@@ -74,7 +76,40 @@ func (c Config) Validate() error {
 			return fmt.Errorf("empty or duplicate rule id %q", r.ID)
 		}
 		ids[r.ID] = true
-		if r.Kind != "layer_dependencies" || r.Description == nil || (r.Severity != "error" && r.Severity != "warning") || r.Unmatched != "error" || r.AllowSameLayer == nil || r.AllowStdlib == nil || (r.ExternalDefault != "allow" && r.ExternalDefault != "deny") {
+		if r.Description == nil || (r.Severity != "error" && r.Severity != "warning") {
+			return fmt.Errorf("rule %s: missing or invalid behavior fields", r.ID)
+		}
+		switch r.Kind {
+		case "source_format", "file_layout":
+			if r.Unmatched != nil || r.AllowSameLayer != nil || r.AllowStdlib != nil ||
+				r.ExternalDefault != nil || r.Layers != nil {
+				return fmt.Errorf("rule %s: layer dependency fields are not allowed for %s", r.ID, r.Kind)
+			}
+			if r.Kind == "source_format" {
+				if r.Format == nil || r.Layout != nil {
+					return fmt.Errorf("rule %s: source_format requires only a format table", r.ID)
+				}
+				if err := r.Format.validate(); err != nil {
+					return fmt.Errorf("rule %s: %w", r.ID, err)
+				}
+			} else {
+				if r.Layout == nil || r.Format != nil {
+					return fmt.Errorf("rule %s: file_layout requires only a layout table", r.ID)
+				}
+				if err := r.Layout.validate(); err != nil {
+					return fmt.Errorf("rule %s: %w", r.ID, err)
+				}
+			}
+			continue
+		case "layer_dependencies":
+			if r.Format != nil || r.Layout != nil {
+				return fmt.Errorf("rule %s: format and layout tables are not allowed for layer_dependencies", r.ID)
+			}
+		default:
+			return fmt.Errorf("rule %s: unknown kind %q", r.ID, r.Kind)
+		}
+		if r.Unmatched == nil || *r.Unmatched != "error" || r.AllowSameLayer == nil || r.AllowStdlib == nil ||
+			r.ExternalDefault == nil || (*r.ExternalDefault != "allow" && *r.ExternalDefault != "deny") {
 			return fmt.Errorf("rule %s: missing or invalid behavior fields", r.ID)
 		}
 		if len(r.Layers) == 0 {
@@ -110,7 +145,8 @@ func validPattern(p string) bool {
 		return true
 	}
 	p = strings.TrimSuffix(p, "/...")
-	return p != "" && !strings.ContainsAny(p, "*?\\: \t\n[]") && !strings.Contains(p, "...") && !strings.HasPrefix(p, "/") && path.Clean(p) == p && p != ".." && !strings.HasPrefix(p, "../")
+	return p != "" && !strings.ContainsAny(p, "*?\\: \t\n[]") && !strings.Contains(p, "...") &&
+		!strings.HasPrefix(p, "/") && path.Clean(p) == p && p != ".." && !strings.HasPrefix(p, "../")
 }
 
 // Match uses path segments; a recursive pattern also matches its base package.

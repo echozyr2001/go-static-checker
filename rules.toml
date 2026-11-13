@@ -32,3 +32,26 @@ name = "config"
 packages = ["internal/config/..."]
 allow = []
 allow_external = ["github.com/BurntSushi/toml"]
+
+[[rules]]
+id = "FMT001"
+kind = "source_format"
+description = "生产源码行宽不超过 120，文件名与包名使用小写"
+severity = "error"
+
+[rules.format]
+packages = ["..."]
+max_line_length = 120
+tab_width = 4
+file_name_pattern = '[a-z][a-z0-9_]*\.go'
+package_name_pattern = '[a-z][a-z0-9]*'
+
+[[rules]]
+id = "LAYOUT001"
+kind = "file_layout"
+description = "保留使用说明、规则示例及命令入口"
+severity = "error"
+
+[rules.layout]
+required_files = ["README.md", "rules.toml", "cmd/go-static-checker/main.go"]
+required_directories = ["internal/config", "internal/checker"]
