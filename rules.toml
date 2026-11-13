@@ -95,31 +95,38 @@ min_blank_lines_between_declarations = 1
 include_tests = true
 
 # 以下为待实现的规则草案。当前检查器会拒绝新字段，CI 失败符合预期。
-# 阈值为初始提案，待审查确认；本 PR 不修改检查器。
+# COMMENT001 和 COMMENT004 使用已指定的 20% 与第 80 列限制；其他规则仍为初始提案。
+# 本 PR 不修改检查器。
 # 注释归属：doc 为紧邻声明的说明，body 为声明内部独立注释，
 # trailing 为代码同行注释。字段注释计入所属结构体或接口，
-# 局部类型与匿名函数中的注释计入外层声明，不重复计数。
-# 文件头说明不计入声明预算。Go 指令不计数，也不能代替说明注释。
+# 局部类型与匿名函数中的注释计入外层声明；同一块内不重复计数。
+# package 汇总所选构建环境中同一导入路径的文件，包含文件头及声明说明。
+# 各块独立检查：子块的代码与注释也计入外层块和 package 的预算。
+# Go 指令不计入注释预算，也不能代替说明注释；列宽规则仍检查指令行。
 
 [[rules]]
 id = "COMMENT001"
 kind = "comment_budget"
-description = "每个函数、方法、结构体和接口的注释合计最多 10 行"
+description = "每个结构体、函数、方法和 package 的注释行数不超过有效代码行数的 20%"
 severity = "error"
 
 [rules.comments]
 packages = ["..."]
-declarations = ["function", "method", "struct", "interface"]
+declarations = ["function", "method", "struct", "package"]
 visibility = "all"
 include_tests = false
 include_generated = false
 exclude_go_directives = true
 # 按注释占用的物理行计数，块注释内部空行计入；同一物理行不重复计数。
 count_unit = "physical_lines"
-max_total_lines = 10
-max_doc_lines = 5
-max_body_lines = 8
-max_trailing_lines = 0
+# 有效代码行：去掉注释后仍有代码；排除空白行及仅含下列分隔符的行。
+# 混合代码与注释的行分别计入代码行与注释行。字符串内容不按注释识别。
+denominator = "effective_code_lines"
+exclude_delimiter_only_lines = ["{", "}", "(", ")", ";"]
+# 精确判断 comment_lines * 100 <= effective_code_lines * 20，不四舍五入。
+# 例如 10 行有效代码最多 2 行注释；不足 5 行时不能有注释。
+# 代码行数为 0 时，仅允许 0 行注释。必需说明与预算冲突时，两项均报告。
+max_comment_percent = 20
 
 [[rules]]
 id = "COMMENT002"
@@ -165,6 +172,27 @@ line_pattern = '\S.*'
 
 [rules.comments.trailing]
 allowed = false
+
+
+# 第 80 列为包含式上限，约束完整物理行，不只是去掉 // 后的正文。
+[[rules]]
+id = "COMMENT004"
+kind = "comment_line_length"
+description = "包含注释的源码行不得超过第 80 列"
+severity = "error"
+
+[rules.comments]
+packages = ["..."]
+include_tests = false
+include_generated = false
+exclude_go_directives = false
+# 覆盖声明说明、块内注释、行尾注释和文件头；块注释的每行均检查。
+positions = ["doc", "body", "trailing", "file"]
+max_column = 80
+# 从第 1 列计数，包含缩进、注释标记及同一行的代码；LF/CRLF 不计宽。
+# Unicode 码点各占 1 列，Tab 前进至下一个 4 的倍数制表位。
+column_metric = "unicode_codepoints"
+tab_width = 4
 
 [[rules]]
 id = "DOC001"
