@@ -1,18 +1,27 @@
+# go-static-checker 仓库自检配置。
+# CI 使用：./bin/go-static-checker -config rules.toml
 schema_version = 1
 
 [project]
+# 相对于本配置文件，必须包含 go.mod。
 root = "."
+# 当前版本仅支持生产源码；生成代码照常检查。
 include_tests = false
+# 按当前 GOOS、GOARCH 和 CGO_ENABLED 选择文件，不额外启用构建标签。
 build_tags = []
 
+# 分层依赖：cli → checker → config；cli 也可以直接读取 config。
+# allow 仅授权直接导入，不传递授权。
 [[rules]]
 id = "ARCH001"
 kind = "layer_dependencies"
 description = "检查工具自身的分层依赖"
 severity = "error"
+# 新增本模块包必须归层；匹配多个层会报配置错误。
 unmatched = "error"
 allow_same_layer = true
 allow_stdlib = true
+# 第三方依赖必须在所属层的 allow_external 中显式放行。
 external_default = "deny"
 
 [[rules.layers]]
@@ -33,6 +42,7 @@ packages = ["internal/config/..."]
 allow = []
 allow_external = ["github.com/BurntSushi/toml"]
 
+# 源码格式：只检查当前构建环境选中的生产文件。
 [[rules]]
 id = "FMT001"
 kind = "source_format"
@@ -41,17 +51,29 @@ severity = "error"
 
 [rules.format]
 packages = ["..."]
+# Unicode 码点计宽，中文计为 1；换行符不计入行宽。
 max_line_length = 120
+# Tab 前进到下一个 4 的倍数位置。
 tab_width = 4
+# 正则匹配整个名称；文件名包含 .go 扩展名。
+# TOML 单引号字符串中的反斜杠不需要额外转义。
 file_name_pattern = '[a-z][a-z0-9_]*\.go'
 package_name_pattern = '[a-z][a-z0-9]*'
 
+# 项目结构：精确路径相对于 project.root，不禁止其他文件或目录。
 [[rules]]
 id = "LAYOUT001"
 kind = "file_layout"
-description = "保留使用说明、规则示例及命令入口"
+description = "保留模块定义、使用说明、规则示例、CI 配置及命令入口"
 severity = "error"
 
 [rules.layout]
-required_files = ["README.md", "rules.toml", "cmd/go-static-checker/main.go"]
+required_files = [
+  "go.mod",
+  "go.sum",
+  "README.md",
+  "rules.toml",
+  ".github/workflows/ci.yml",
+  "cmd/go-static-checker/main.go",
+]
 required_directories = ["internal/config", "internal/checker"]
