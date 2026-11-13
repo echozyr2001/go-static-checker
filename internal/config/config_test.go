@@ -19,6 +19,7 @@ func TestMatch(t *testing.T) {
 		}
 	}
 }
+
 func TestLoadStrict(t *testing.T) {
 	original, err := os.ReadFile("../../rules.toml")
 	if err != nil {

@@ -15,6 +15,7 @@ func layoutRule() config.Rule {
 	return config.Rule{ID: "LAYOUT001", Kind: "file_layout", Description: &description, Severity: "error",
 		Layout: &config.FileLayout{RequiredFiles: []string{"README.md", "docs/guide.md"}, RequiredDirectories: []string{"configs"}}}
 }
+
 func TestFileLayout(t *testing.T) {
 	c := fixture(t)
 	c.Rules = []config.Rule{layoutRule()}
@@ -54,6 +55,7 @@ func TestFileLayout(t *testing.T) {
 		t.Fatalf("wrong types: %+v", r)
 	}
 }
+
 func TestLayoutSymlinkEscapeIsIncomplete(t *testing.T) {
 	c := fixture(t)
 	c.Rules = []config.Rule{layoutRule()}

@@ -21,6 +21,9 @@ func checkSourceFormat(r config.Rule, sources []source) ([]Diagnostic, error) {
 	}
 	var diagnostics []Diagnostic
 	for _, s := range sources {
+		if s.isTest && !f.IncludeTests {
+			continue
+		}
 		rel := strings.TrimPrefix(strings.TrimPrefix(s.pkg.PkgPath, s.pkg.Module.Path), "/")
 		if rel == "" {
 			rel = "."
@@ -46,6 +49,7 @@ func checkSourceFormat(r config.Rule, sources []source) ([]Diagnostic, error) {
 				fmt.Sprintf("package name %q does not match %q", s.packageName, *f.PackageNamePattern),
 				s.packagePosition.Line, s.packagePosition.Column)
 		}
+		diagnostics = append(diagnostics, declarationSpacing(r, s)...)
 		if *f.MaxLineLength == 0 {
 			continue
 		}

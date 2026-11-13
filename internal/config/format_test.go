@@ -85,6 +85,7 @@ layers = []`, "not allowed"},
 		})
 	}
 }
+
 func TestRejectEmptyCustomRules(t *testing.T) {
 	c, err := Load("../../rules.toml")
 	if err != nil {
