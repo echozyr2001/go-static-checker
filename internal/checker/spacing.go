@@ -14,8 +14,8 @@ type declarationSpan struct {
 	relevant        bool
 }
 
-// Check adjacent top-level declarations and adjacent specs within a type group.
-// Non-function/non-struct declarations break adjacency; local types are excluded.
+// declarationSpacing checks adjacent declarations and grouped type specs.
+// Other declaration kinds break adjacency; local types are excluded.
 func declarationSpacing(r config.Rule, s source) []Diagnostic {
 	minimum := r.Format.MinBlankLinesBetweenDeclarations
 	if minimum == 0 {
@@ -26,8 +26,7 @@ func declarationSpacing(r config.Rule, s source) []Diagnostic {
 		for _, comment := range group.List {
 			start := s.fset.PositionFor(comment.Pos(), false).Offset
 			if bytes.HasPrefix(s.content[start:], []byte("/*")) {
-				// Parsing has already validated the closing delimiter. AST comment
-				// text omits CR bytes, so Comment.End is not a physical CRLF offset.
+				// AST text omits CR bytes; use the physical closing offset.
 				end := start + bytes.Index(s.content[start:], []byte("*/")) + 2
 				blockComments = append(blockComments, [2]int{start, end})
 			}
@@ -46,8 +45,7 @@ func declarationSpacing(r config.Rule, s source) []Diagnostic {
 			lines := bytes.Split(gap, []byte("\n"))
 			blanks := 0
 			offset := end + len(lines[0]) + 1
-			// Only complete physical lines between declarations count. A whitespace-only
-			// line inside a block comment is not a blank separator.
+			// Count complete blank lines outside block comments.
 			for j := 1; j < len(lines)-1; j++ {
 				lineOffset := offset
 				offset += len(lines[j]) + 1

@@ -2,7 +2,7 @@
 
 ## 用途
 
-读取 TOML 规则，检查 Go 项目的分层依赖、源码格式和文件结构。支持单模块项目，格式规则可包含测试源码，输出文本或 JSON 报告。
+读取 TOML 规则，检查 Go 项目的分层依赖、源码格式、注释和文件位置。支持单模块项目，格式与注释规则可包含测试源码，输出文本或 JSON 报告。
 
 ## 运行
 
@@ -14,7 +14,7 @@ go build -o bin/go-static-checker ./cmd/go-static-checker
 ./bin/go-static-checker -config rules.toml -format json
 ```
 
-仓库内的 `rules.toml` 检查工具自身的分层依赖、源码格式和必需文件。复制配置后，修改 `project.root` 和规则即可检查其他项目。`root` 相对于配置文件所在目录，也支持绝对路径，必须包含 `go.mod`。CI 请运行编译后的程序，`go run` 不会原样传递程序的退出码。
+仓库内的 `rules.toml` 用于工具自身的 CI 检查。复制配置后，修改 `project.root` 和规则即可检查其他项目。`root` 相对于配置文件所在目录，也支持绝对路径，必须包含 `go.mod`。CI 请运行编译后的程序，`go run` 不会原样传递程序的退出码。
 
 ## 配置
 
@@ -141,6 +141,45 @@ required_directories = ["internal/domain", "internal/service"]
 
 文件结构检查不受构建标签影响。路径不存在或类型不符会产生规则诊断，行列为 `0`。权限等读取错误会返回退出码 `2`。符号链接可指向项目内部，指向项目外部会导致检查未完成。所有规则仍共享项目加载前置检查：目标必须是可加载的单模块 Go 项目。
 
+### 注释预算、说明和格式
+
+完整配置见根目录 [rules.toml](rules.toml) 中的 `COMMENT001` 至 `COMMENT004`。每种规则使用独立的 `[rules.comments]`，所有行为字段必须显式填写。
+
+| 规则类型 | 检查内容 |
+|---|---|
+| `comment_budget` | 每个选中声明和 package 的注释行数预算 |
+| `required_comments` | 选中声明是否有紧邻的非空说明 |
+| `comment_format` | 声明说明的名称前缀、块内注释格式和同行注释 |
+| `comment_line_length` | 含注释的完整物理行是否超过指定列 |
+
+共同字段为 `packages`、`include_tests`、`include_generated` 和 `exclude_go_directives`。包路径沿用分层规则的匹配语义。测试源码按构建条件选取；生成代码按 Go 的 `Code generated ... DO NOT EDIT.` 标记识别。排除 Go 指令时，`//go:`、`//line`、`/*line` 和旧式 `// +build` 不参与预算或说明检查。仓库的列宽规则仍检查指令行。
+
+前三种规则还要求 `declarations` 和 `visibility`。声明类型支持 `function`、`method`、`struct` 和 `interface`；可见性支持 `all`、`exported` 和 `unexported`。只有预算规则支持 `package`，且必须使用 `visibility = "all"`。函数、方法和类型按文件顶层声明检查；局部类型和匿名函数计入外层声明。
+
+预算使用 `count_unit = "physical_lines"`、`denominator = "comment_and_code_lines"` 和 `rounding = "ceil"`。令 C 为注释行数，K 为有效代码行数，实际允许值为：
+
+```text
+max(min_allowed_comment_lines, ceil((C + K) * max_comment_percent / 100))
+```
+
+仓库配置为 20%，向上取整且至少允许 1 行。C 不超过允许值即通过。因此，3 行代码加 1 行注释通过，3 行代码加 2 行注释失败。取整和最低额度允许实际占比超过 20%，最低额度不要求必须写注释。
+
+注释按物理行去重，块注释内部空行也计入。有效代码行排除空白、纯注释和仅含 `exclude_delimiter_only_lines` 中分隔符的行。代码与注释同行时，两类各计 1 行；字符串中的注释标记不计为注释。声明说明计入对应声明，字段说明计入所属结构体或接口。package 汇总同一导入路径的选中文件，含文件头和声明说明；外部测试包单独汇总。各块独立检查，不因 package 通过而豁免声明。
+
+`required_comments` 目前只支持 `position = "doc"`。`require_nonempty = true` 要求说明含非空文本，块内或同行注释不能替代声明说明。
+
+`comment_format` 的 `doc.style` 和 `body.style` 目前只支持 `line`，即双斜杠注释。`doc.require_name_prefix` 检查首行是否以声明名称开头；`require_text_after_name` 进一步要求名称后有空白和非空说明。字段说明按块内注释处理。`body.line_pattern` 对去掉标记和一个可选空格后的文本做整串正则匹配。`trailing.allowed = false` 禁止声明内部及结束位置的同行注释。
+
+`comment_line_length` 使用 `positions` 选择 `doc`、`body`、`trailing` 和 `file`。仓库选择全部位置，`max_column = 80`，第 80 列可用。宽度包括缩进、标记和同一行代码。`column_metric` 目前只支持 `unicode_codepoints`；`tab_width` 控制制表位，CRLF 不计入宽度。每行只报告一次，诊断定位使用 UTF-8 字节列号。
+
+### Markdown 位置
+
+`file_policy` 根据扩展名检查文件位置，使用 `[rules.files]`。仓库的 `DOC001` 仅允许根目录 `README.md`，子目录中的 README、`docs`、`vendor` 和其他隐藏目录中的 Markdown 都会违规。仅 `.git` 目录树被排除。
+
+`extensions` 选择扩展名，`extension_case_sensitive = false` 同时匹配 `.md` 和 `.MD`。路径始终精确区分大小写。`allowed_paths` 放行单个相对路径，`allowed_directories` 放行目录树，`excluded_directories` 跳过目录树。目录按路径段匹配，`docs` 不匹配 `docs-old`。三个数组都必须填写，可以为空。
+
+目前只支持 `default = "deny"` 和 `follow_directory_symlinks = false`。扫描相对于 `project.root`，不受 Go 构建标签影响。不遍历目录符号链接；文件链接自身或最终目标的扩展名匹配时，按链接所在位置检查。断链、权限等读取错误返回退出码 `2`。此规则控制允许位置，必需文件仍由 `file_layout` 指定。
+
 ## 报告和退出码
 
 | 退出码 | 含义 |
@@ -156,13 +195,15 @@ JSON 报告包含 `environment`、`build_tags`、`packages`、`files` 和 `diagn
 | 分层依赖 | `forbidden_layer_dependency`、`forbidden_external_dependency`、`forbidden_stdlib_dependency`、`unclassified_package` |
 | 源码格式 | `line_too_long`、`invalid_file_name`、`invalid_package_name`、`missing_declaration_blank_line` |
 | 文件结构 | `missing_required_file`、`missing_required_directory`、`invalid_required_file`、`invalid_required_directory` |
+| 注释 | `comment_budget_exceeded`、`missing_required_comment`、`invalid_comment_format`、`comment_line_too_long` |
+| 文件位置 | `forbidden_file_location` |
 
 工具按文件、位置、规则 ID 和诊断代码排序，便于 CI 比较。格式诊断的目标包和层名为空；文件结构诊断的来源包也为空。运行失败时错误写入 stderr，不输出成功报告。
 
 ## 检查边界
 
 - 按当前 Go 工具链的 GOOS、GOARCH、CGO_ENABLED 和配置中的构建标签选择源码。报告记录实际环境。
-- 分层规则不检查 `_test.go`，`project.include_tests = true` 会报错。格式规则可用 `rules.format.include_tests` 选择测试源码。生成代码照常检查。
+- 分层规则不检查 `_test.go`，`project.include_tests = true` 会报错。格式和注释规则分别用 `rules.format.include_tests`、`rules.comments.include_tests` 选择测试源码。注释规则可排除生成代码，其他源码规则照常检查。
 - 关闭 workspace 联动。项目目录下发现嵌套 `go.mod` 即报错，扫描跳过 `.git` 和 `vendor`。
 - 根据加载器提供的模块身份识别外部依赖，支持本地 `replace`。只检查本模块的直接导入，不递归约束第三方内部依赖。
 - cgo 的 `C` 导入跳过，不检查 C 侧依赖。
@@ -179,4 +220,4 @@ go vet ./...
 go run ./cmd/go-static-checker -config rules.toml
 ```
 
-当前已支持分层依赖、自定义源码格式和必需文件结构。后续 PR 可增加测试依赖检查、多模块支持和基于类型信息的调用规则。新增规则类型前，先定义配置语义、诊断代码和正反例。
+当前已支持分层依赖、自定义源码格式、注释约束、文件位置和必需文件结构。后续 PR 可增加测试依赖检查、多模块支持和基于类型信息的调用规则。新增规则类型前，先定义配置语义、诊断代码和正反例。

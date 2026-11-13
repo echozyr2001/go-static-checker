@@ -70,8 +70,8 @@ func checkSourceFormat(r config.Rule, sources []source) ([]Diagnostic, error) {
 	return diagnostics, nil
 }
 
-// Width counts Unicode code points; returned columns are one-based UTF-8 byte offsets.
-// Stop at the first excess character, avoiding integer overflow even for huge tab widths.
+// firstOverlongColumn returns the byte offset of the first excess code point.
+// Stopping at the limit avoids overflow with large tab widths.
 func firstOverlongColumn(line string, limit, tabWidth int) int {
 	width := 0
 	for offset, r := range line {

@@ -17,13 +17,12 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// Test source discovery uses go list without -test: no generated test main or test
-// import graph is needed for syntax-only formatting checks. Go selects build tags.
+// loadFormatTestSources discovers build-selected tests without their imports.
 func loadFormatTestSources(ctx context.Context, c config.Config, env []string,
 	own map[string]*packages.Package) ([]source, error) {
 	enabled := false
 	for _, r := range c.Rules {
-		if r.Format != nil && r.Format.IncludeTests {
+		if r.Format != nil && r.Format.IncludeTests || r.Comments != nil && *r.Comments.IncludeTests {
 			enabled = true
 		}
 	}
@@ -63,10 +62,14 @@ func loadFormatTestSources(ctx context.Context, c config.Config, env []string,
 		}
 		selected := false
 		for _, r := range c.Rules {
-			if r.Format == nil || !r.Format.IncludeTests {
-				continue
+			var patterns []string
+			if r.Format != nil && r.Format.IncludeTests {
+				patterns = r.Format.Packages
 			}
-			for _, pattern := range r.Format.Packages {
+			if r.Comments != nil && *r.Comments.IncludeTests {
+				patterns = r.Comments.Packages
+			}
+			for _, pattern := range patterns {
 				selected = selected || config.Match(pattern, rel)
 			}
 		}
