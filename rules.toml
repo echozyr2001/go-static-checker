@@ -93,3 +93,94 @@ file_name_pattern = ""
 package_name_pattern = ""
 min_blank_lines_between_declarations = 1
 include_tests = true
+
+# 以下为待实现的规则草案。当前检查器会拒绝新字段，CI 失败符合预期。
+# 阈值为初始提案，待审查确认；本 PR 不修改检查器。
+# 注释归属：doc 为紧邻声明的说明，body 为声明内部独立注释，
+# trailing 为代码同行注释。字段注释计入所属结构体或接口，
+# 局部类型与匿名函数中的注释计入外层声明，不重复计数。
+# 文件头说明不计入声明预算。Go 指令不计数，也不能代替说明注释。
+
+[[rules]]
+id = "COMMENT001"
+kind = "comment_budget"
+description = "每个函数、方法、结构体和接口的注释合计最多 10 行"
+severity = "error"
+
+[rules.comments]
+packages = ["..."]
+declarations = ["function", "method", "struct", "interface"]
+visibility = "all"
+include_tests = false
+include_generated = false
+exclude_go_directives = true
+# 按注释占用的物理行计数，块注释内部空行计入；同一物理行不重复计数。
+count_unit = "physical_lines"
+max_total_lines = 10
+max_doc_lines = 5
+max_body_lines = 8
+max_trailing_lines = 0
+
+[[rules]]
+id = "COMMENT002"
+kind = "required_comments"
+description = "导出的函数、方法、结构体和接口必须有声明说明"
+severity = "error"
+
+[rules.comments]
+packages = ["..."]
+declarations = ["function", "method", "struct", "interface"]
+visibility = "exported"
+include_tests = false
+include_generated = false
+exclude_go_directives = true
+# 说明必须紧邻声明且含有非空文本；body 和 trailing 不能替代 doc。
+position = "doc"
+require_nonempty = true
+
+[[rules]]
+id = "COMMENT003"
+kind = "comment_format"
+description = "声明说明以名称开头，内部注释使用双斜杠，禁止行尾注释"
+severity = "error"
+
+[rules.comments]
+packages = ["..."]
+declarations = ["function", "method", "struct", "interface"]
+visibility = "all"
+include_tests = false
+include_generated = false
+exclude_go_directives = true
+# 正则整串匹配去掉注释标记及一个可选空格后的单行文本。
+# 文档说明仅检查首行；结构体字段说明归入 body，不使用外层类型名称。
+[rules.comments.doc]
+style = "line"
+require_name_prefix = true
+# 名称之后必须有空白分隔及非空说明，避免只重复声明名称。
+require_text_after_name = true
+
+[rules.comments.body]
+style = "line"
+line_pattern = '\S.*'
+
+[rules.comments.trailing]
+allowed = false
+
+[[rules]]
+id = "DOC001"
+kind = "file_policy"
+description = "Markdown 仅允许出现在指定根目录文件和 docs 目录树中"
+severity = "error"
+
+[rules.files]
+# 相对于 project.root 扫描，不受 Go 构建标签影响。
+extensions = [".md"]
+extension_case_sensitive = false
+default = "deny"
+# 路径大小写精确匹配。目录按路径段匹配，docs-old 不属于 docs。
+allowed_paths = ["README.md", "CONTRIBUTING.md"]
+allowed_directories = ["docs"]
+# 排除 Git 元数据与第三方 vendor 目录树，不排除其他隐藏目录。
+excluded_directories = [".git", "vendor"]
+# 不遍历目录符号链接；指向 Markdown 的文件符号链接按链接所在位置检查。
+follow_directory_symlinks = false
