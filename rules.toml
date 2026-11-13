@@ -107,7 +107,7 @@ include_tests = true
 [[rules]]
 id = "COMMENT001"
 kind = "comment_budget"
-description = "每个结构体、函数、方法和 package 的注释行数不超过有效代码行数的 20%"
+description = "每个结构块的注释预算为注释与代码总行数的 20%，向上取整且至少允许 1 行"
 severity = "error"
 
 [rules.comments]
@@ -121,12 +121,17 @@ exclude_go_directives = true
 count_unit = "physical_lines"
 # 有效代码行：去掉注释后仍有代码；排除空白行及仅含下列分隔符的行。
 # 混合代码与注释的行分别计入代码行与注释行。字符串内容不按注释识别。
-denominator = "effective_code_lines"
+denominator = "comment_and_code_lines"
 exclude_delimiter_only_lines = ["{", "}", "(", ")", ";"]
-# 精确判断 comment_lines * 100 <= effective_code_lines * 20，不四舍五入。
-# 例如 10 行有效代码最多 2 行注释；不足 5 行时不能有注释。
-# 代码行数为 0 时，仅允许 0 行注释。必需说明与预算冲突时，两项均报告。
+# 基础占比：comment_lines / (comment_lines + effective_code_lines) <= 0.2。
+# 总量为上述两类行数之和，不包括空白行和被排除的分隔符行。
+# 实际预算：max(1, ceil((comment_lines + effective_code_lines) * 20 / 100))。
+# 注释行数不超过此预算即通过；向上取整与最低额度允许实际占比略超 20%。
+# 例如 3 行代码 + 1 行注释通过；3 行代码 + 2 行注释不通过。
+# 至少允许 1 行是预算下限，不要求每个块实际写注释；总量为 0 时无需计算比值。
 max_comment_percent = 20
+rounding = "ceil"
+min_allowed_comment_lines = 1
 
 [[rules]]
 id = "COMMENT002"
@@ -197,7 +202,7 @@ tab_width = 4
 [[rules]]
 id = "DOC001"
 kind = "file_policy"
-description = "Markdown 仅允许出现在指定根目录文件和 docs 目录树中"
+description = "Markdown 仅允许项目根目录的 README.md"
 severity = "error"
 
 [rules.files]
@@ -205,10 +210,10 @@ severity = "error"
 extensions = [".md"]
 extension_case_sensitive = false
 default = "deny"
-# 路径大小写精确匹配。目录按路径段匹配，docs-old 不属于 docs。
-allowed_paths = ["README.md", "CONTRIBUTING.md"]
-allowed_directories = ["docs"]
-# 排除 Git 元数据与第三方 vendor 目录树，不排除其他隐藏目录。
-excluded_directories = [".git", "vendor"]
+# 路径大小写精确匹配，仅允许根级 README.md；子目录 README.md 也不允许。
+allowed_paths = ["README.md"]
+allowed_directories = []
+# 仅排除 Git 元数据，docs、vendor 和其他隐藏目录也受位置限制。
+excluded_directories = [".git"]
 # 不遍历目录符号链接；指向 Markdown 的文件符号链接按链接所在位置检查。
 follow_directory_symlinks = false
