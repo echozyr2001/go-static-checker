@@ -1,0 +1,34 @@
+schema_version = 1
+
+[project]
+root = "."
+include_tests = false
+build_tags = []
+
+[[rules]]
+id = "ARCH001"
+kind = "layer_dependencies"
+description = "检查工具自身的分层依赖"
+severity = "error"
+unmatched = "error"
+allow_same_layer = true
+allow_stdlib = true
+external_default = "deny"
+
+[[rules.layers]]
+name = "cli"
+packages = ["cmd/..."]
+allow = ["config", "checker"]
+allow_external = []
+
+[[rules.layers]]
+name = "checker"
+packages = ["internal/checker/..."]
+allow = ["config"]
+allow_external = ["golang.org/x/tools/go/packages"]
+
+[[rules.layers]]
+name = "config"
+packages = ["internal/config/..."]
+allow = []
+allow_external = ["github.com/BurntSushi/toml"]

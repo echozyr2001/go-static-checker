@@ -1,0 +1,126 @@
+// Package config decodes and validates version 1 rule files.
+package config
+
+import (
+	"fmt"
+	"github.com/BurntSushi/toml"
+	"path"
+	"path/filepath"
+	"strings"
+)
+
+type Config struct {
+	SchemaVersion int     `toml:"schema_version"`
+	Project       Project `toml:"project"`
+	Rules         []Rule  `toml:"rules"`
+}
+type Project struct {
+	Root         string   `toml:"root"`
+	IncludeTests *bool    `toml:"include_tests"`
+	BuildTags    []string `toml:"build_tags"`
+}
+type Rule struct {
+	ID              string  `toml:"id"`
+	Kind            string  `toml:"kind"`
+	Description     *string `toml:"description"`
+	Severity        string  `toml:"severity"`
+	Unmatched       string  `toml:"unmatched"`
+	AllowSameLayer  *bool   `toml:"allow_same_layer"`
+	AllowStdlib     *bool   `toml:"allow_stdlib"`
+	ExternalDefault string  `toml:"external_default"`
+	Layers          []Layer `toml:"layers"`
+}
+type Layer struct {
+	Name          string   `toml:"name"`
+	Packages      []string `toml:"packages"`
+	Allow         []string `toml:"allow"`
+	AllowExternal []string `toml:"allow_external"`
+}
+
+func Load(filename string) (Config, error) {
+	var c Config
+	md, err := toml.DecodeFile(filename, &c)
+	if err != nil {
+		return c, err
+	}
+	if keys := md.Undecoded(); len(keys) > 0 {
+		return c, fmt.Errorf("unknown configuration fields: %v", keys)
+	}
+	if err := c.Validate(); err != nil {
+		return c, err
+	}
+	if !filepath.IsAbs(c.Project.Root) {
+		c.Project.Root = filepath.Join(filepath.Dir(filename), c.Project.Root)
+	}
+	c.Project.Root, err = filepath.Abs(c.Project.Root)
+	return c, err
+}
+func (c Config) Validate() error {
+	if c.SchemaVersion != 1 {
+		return fmt.Errorf("schema_version must be 1")
+	}
+	if c.Project.Root == "" || c.Project.IncludeTests == nil || c.Project.BuildTags == nil {
+		return fmt.Errorf("project requires root, include_tests and build_tags")
+	}
+	if *c.Project.IncludeTests {
+		return fmt.Errorf("include_tests=true is not supported in schema version 1")
+	}
+	if len(c.Rules) == 0 {
+		return fmt.Errorf("at least one rule is required")
+	}
+	ids := map[string]bool{}
+	for _, r := range c.Rules {
+		if strings.TrimSpace(r.ID) == "" || ids[r.ID] {
+			return fmt.Errorf("empty or duplicate rule id %q", r.ID)
+		}
+		ids[r.ID] = true
+		if r.Kind != "layer_dependencies" || r.Description == nil || (r.Severity != "error" && r.Severity != "warning") || r.Unmatched != "error" || r.AllowSameLayer == nil || r.AllowStdlib == nil || (r.ExternalDefault != "allow" && r.ExternalDefault != "deny") {
+			return fmt.Errorf("rule %s: missing or invalid behavior fields", r.ID)
+		}
+		if len(r.Layers) == 0 {
+			return fmt.Errorf("rule %s: layers required", r.ID)
+		}
+		names := map[string]bool{}
+		for _, l := range r.Layers {
+			if strings.TrimSpace(l.Name) == "" || names[l.Name] {
+				return fmt.Errorf("rule %s: empty or duplicate layer %q", r.ID, l.Name)
+			}
+			names[l.Name] = true
+			if len(l.Packages) == 0 || l.Allow == nil || l.AllowExternal == nil {
+				return fmt.Errorf("layer %s: packages, allow and allow_external required", l.Name)
+			}
+			for _, p := range append(append([]string{}, l.Packages...), l.AllowExternal...) {
+				if !validPattern(p) {
+					return fmt.Errorf("layer %s: invalid pattern %q", l.Name, p)
+				}
+			}
+		}
+		for _, l := range r.Layers {
+			for _, name := range l.Allow {
+				if !names[name] {
+					return fmt.Errorf("layer %s references unknown layer %s", l.Name, name)
+				}
+			}
+		}
+	}
+	return nil
+}
+func validPattern(p string) bool {
+	if p == "." || p == "..." {
+		return true
+	}
+	p = strings.TrimSuffix(p, "/...")
+	return p != "" && !strings.ContainsAny(p, "*?\\: \t\n[]") && !strings.Contains(p, "...") && !strings.HasPrefix(p, "/") && path.Clean(p) == p && p != ".." && !strings.HasPrefix(p, "../")
+}
+
+// Match uses path segments; a recursive pattern also matches its base package.
+func Match(pattern, value string) bool {
+	if pattern == "..." {
+		return true
+	}
+	if strings.HasSuffix(pattern, "/...") {
+		base := strings.TrimSuffix(pattern, "/...")
+		return value == base || strings.HasPrefix(value, base+"/")
+	}
+	return pattern == value
+}
