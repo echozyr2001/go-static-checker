@@ -12,6 +12,7 @@ import (
 )
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+
 func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("go-static-checker", flag.ContinueOnError)
 	flags.SetOutput(stderr)

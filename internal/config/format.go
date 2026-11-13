@@ -7,13 +7,17 @@ import (
 	"strings"
 )
 
-// SourceFormat explicitly declares every option; zero/empty values disable a check.
+// SourceFormat requires the original format options; the newer spacing and test
+// options are opt-in. Zero/empty values disable the corresponding checks.
 type SourceFormat struct {
 	Packages           []string `toml:"packages"`
 	MaxLineLength      *int     `toml:"max_line_length"`
 	TabWidth           *int     `toml:"tab_width"`
 	FileNamePattern    *string  `toml:"file_name_pattern"`
 	PackageNamePattern *string  `toml:"package_name_pattern"`
+	// Omitted values preserve production-only checks without declaration spacing.
+	MinBlankLinesBetweenDeclarations int  `toml:"min_blank_lines_between_declarations"`
+	IncludeTests                     bool `toml:"include_tests"`
 }
 
 type FileLayout struct {
@@ -35,7 +39,11 @@ func (f SourceFormat) validate() error {
 	if *f.MaxLineLength < 0 || *f.TabWidth < 1 {
 		return fmt.Errorf("max_line_length must be nonnegative and tab_width must be positive")
 	}
-	if *f.MaxLineLength == 0 && *f.FileNamePattern == "" && *f.PackageNamePattern == "" {
+	if f.MinBlankLinesBetweenDeclarations < 0 {
+		return fmt.Errorf("min_blank_lines_between_declarations must be nonnegative")
+	}
+	if *f.MaxLineLength == 0 && *f.FileNamePattern == "" && *f.PackageNamePattern == "" &&
+		f.MinBlankLinesBetweenDeclarations == 0 {
 		return fmt.Errorf("format must enable at least one check")
 	}
 	for _, p := range f.Packages {
