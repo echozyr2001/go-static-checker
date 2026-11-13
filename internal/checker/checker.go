@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/echozyr2001/go-static-checker/internal/config"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"golang.org/x/tools/go/packages"
@@ -31,6 +32,7 @@ type Diagnostic struct {
 	SourceLayer   string `json:"source_layer"`
 	TargetLayer   string `json:"target_layer"`
 }
+
 type Report struct {
 	Environment map[string]string `json:"environment"`
 	BuildTags   []string          `json:"build_tags"`
@@ -45,6 +47,9 @@ type source struct {
 	content         []byte
 	packageName     string
 	packagePosition token.Position
+	node            *ast.File
+	fset            *token.FileSet
+	isTest          bool
 	imports         []struct {
 		target string
 		pos    token.Position
@@ -133,7 +138,7 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 			if err != nil {
 				return report, err
 			}
-			f, err := parser.ParseFile(fset, filename, content, parser.AllErrors)
+			f, err := parser.ParseFile(fset, filename, content, parser.ParseComments|parser.AllErrors)
 			if err != nil {
 				return report, err
 			}
@@ -141,7 +146,7 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 			if err != nil {
 				return report, err
 			}
-			s := source{pkg: p, file: filepath.ToSlash(rel), content: content,
+			s := source{pkg: p, file: filepath.ToSlash(rel), content: content, node: f, fset: fset,
 				packageName: f.Name.Name, packagePosition: fset.PositionFor(f.Name.Pos(), false)}
 			for _, imp := range f.Imports {
 				target, err := strconv.Unquote(imp.Path.Value)
@@ -157,6 +162,12 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 			report.Files++
 		}
 	}
+	testSources, err := loadFormatTestSources(ctx, c, env, own)
+	if err != nil {
+		return report, err
+	}
+	sources = append(sources, testSources...)
+	report.Files += len(testSources)
 	for _, r := range c.Rules {
 		switch r.Kind {
 		case "source_format":
@@ -202,6 +213,9 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 			}
 		}
 		for _, s := range sources {
+			if s.isTest {
+				continue
+			}
 			from := layers[s.pkg.PkgPath]
 			if from == nil {
 				continue

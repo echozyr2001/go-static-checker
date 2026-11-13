@@ -2,7 +2,7 @@
 
 ## 用途
 
-读取 TOML 规则，检查 Go 项目的分层依赖、源码格式和文件结构。支持单模块生产代码，输出文本或 JSON 报告。
+读取 TOML 规则，检查 Go 项目的分层依赖、源码格式和文件结构。支持单模块项目，格式规则可包含测试源码，输出文本或 JSON 报告。
 
 ## 运行
 
@@ -18,7 +18,7 @@ go build -o bin/go-static-checker ./cmd/go-static-checker
 
 ## 配置
 
-所有示例字段均须显式填写。未知字段、缺失字段、规则类型不适用的字段和无效枚举值均报错。`schema_version = 1` 的分层配置保持兼容；新增规则使用独立的参数表。
+除注明为可选的字段外，示例字段均须显式填写。未知字段、缺失字段、规则类型不适用的字段和无效枚举值均报错。`schema_version = 1` 的分层配置保持兼容；新增规则使用独立的参数表。
 
 ### 分层依赖
 
@@ -92,7 +92,36 @@ package_name_pattern = '[a-z][a-z0-9]*'
 
 行宽按 Unicode 码点计数，中文字符计为 1，组合字符分别计数；这不是终端显示宽度。Tab 按制表位展开，LF 和 CRLF 行尾不计入行宽。注释、字符串和生成代码同样检查。每个超长行报告一次，定位到第一个超限字符。诊断列号是从 1 开始的 UTF-8 字节位置，与 Go 源码位置一致。
 
-文件名问题定位到 `1:1`，包名问题定位到各文件的包名标识符。格式诊断使用真实文件行列，忽略 `//line` 的位置重映射。匹配范围只包含当前构建环境选中的生产文件，不检查 `_test.go` 和未启用标签对应的文件。工具只读取源码，不自动修复；本规则不检查 `gofmt`、函数名、类型名或变量名。
+文件名问题定位到 `1:1`，包名问题定位到各文件的包名标识符。格式诊断使用真实文件行列，忽略 `//line` 的位置重映射。默认只检查当前构建环境选中的生产文件，可用下面的可选字段包含测试源码。工具只读取源码，不自动修复；本规则不检查 `gofmt`、函数名、类型名或变量名。
+
+### 声明间空行
+
+以下规则要求相邻函数、方法和结构体声明之间至少有一行空行，包含 `_test.go`。独立配置这条规则，可避免将其他格式约束同时施加到测试文件。
+
+```toml
+[[rules]]
+id = "FMT002"
+kind = "source_format"
+description = "相邻函数、方法和结构体声明之间至少保留一行空行"
+severity = "error"
+
+[rules.format]
+packages = ["..."]
+max_line_length = 0
+tab_width = 4
+file_name_pattern = ""
+package_name_pattern = ""
+min_blank_lines_between_declarations = 1
+include_tests = true
+```
+
+`min_blank_lines_between_declarations` 为可选的非负整数，省略或设为 `0` 时关闭空行检查。只检查文件顶层相邻的函数、方法、结构体声明，以及 `type (...)` 内相邻的结构体声明。包含结构体的类型声明组在顶层也参与检查。其他声明会中断相邻关系。结构体字段、函数体内的局部类型和匿名结构体不参与检查。
+
+空行须位于上一声明末尾与下一声明的文档注释之间。只有空格或 Tab 的行也计为空行；注释行和块注释内部的空白行不计入。支持 LF 和 CRLF。违规定位到后一声明的真实行列，诊断代码为 `missing_declaration_blank_line`。
+
+`rules.format.include_tests` 为可选布尔值，默认 `false`。设为 `true` 后，仅当前格式规则增加对匹配包中的测试源码的检查，包括外部测试包和只有测试文件的包。`packages` 仍匹配所属目录对应的模块相对包路径，诊断的 `source_package` 也使用这个所属包路径。测试文件由 `go list` 按当前平台与构建标签选择，同一文件只计数一次。
+
+测试源码只解析语法，不加载测试依赖图或生成测试入口。分层规则仍只检查生产代码，`project.include_tests` 仍须为 `false`。测试文件是否可编译由 `go test` 验证；选中测试源码的解析失败会返回退出码 `2`。
 
 ### 必需文件与目录
 
@@ -125,7 +154,7 @@ JSON 报告包含 `environment`、`build_tags`、`packages`、`files` 和 `diagn
 | 规则类型 | 诊断代码 |
 |---|---|
 | 分层依赖 | `forbidden_layer_dependency`、`forbidden_external_dependency`、`forbidden_stdlib_dependency`、`unclassified_package` |
-| 源码格式 | `line_too_long`、`invalid_file_name`、`invalid_package_name` |
+| 源码格式 | `line_too_long`、`invalid_file_name`、`invalid_package_name`、`missing_declaration_blank_line` |
 | 文件结构 | `missing_required_file`、`missing_required_directory`、`invalid_required_file`、`invalid_required_directory` |
 
 工具按文件、位置、规则 ID 和诊断代码排序，便于 CI 比较。格式诊断的目标包和层名为空；文件结构诊断的来源包也为空。运行失败时错误写入 stderr，不输出成功报告。
@@ -133,7 +162,7 @@ JSON 报告包含 `environment`、`build_tags`、`packages`、`files` 和 `diagn
 ## 检查边界
 
 - 按当前 Go 工具链的 GOOS、GOARCH、CGO_ENABLED 和配置中的构建标签选择源码。报告记录实际环境。
-- 不检查 `_test.go`；`include_tests = true` 会报错。生成代码、空白导入、点导入和别名导入均检查。
+- 分层规则不检查 `_test.go`，`project.include_tests = true` 会报错。格式规则可用 `rules.format.include_tests` 选择测试源码。生成代码照常检查。
 - 关闭 workspace 联动。项目目录下发现嵌套 `go.mod` 即报错，扫描跳过 `.git` 和 `vendor`。
 - 根据加载器提供的模块身份识别外部依赖，支持本地 `replace`。只检查本模块的直接导入，不递归约束第三方内部依赖。
 - cgo 的 `C` 导入跳过，不检查 C 侧依赖。
@@ -150,4 +179,4 @@ go vet ./...
 go run ./cmd/go-static-checker -config rules.toml
 ```
 
-当前已支持分层依赖、自定义源码格式和必需文件结构。后续 PR 可增加测试包支持、多模块支持和基于类型信息的调用规则。新增规则类型前，先定义配置语义、诊断代码和正反例。
+当前已支持分层依赖、自定义源码格式和必需文件结构。后续 PR 可增加测试依赖检查、多模块支持和基于类型信息的调用规则。新增规则类型前，先定义配置语义、诊断代码和正反例。

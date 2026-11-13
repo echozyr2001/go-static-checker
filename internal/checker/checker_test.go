@@ -19,6 +19,7 @@ func write(t *testing.T, root, name, body string) {
 		t.Fatal(err)
 	}
 }
+
 func fixture(t *testing.T) config.Config {
 	t.Helper()
 	root := t.TempDir()
@@ -34,6 +35,7 @@ func fixture(t *testing.T) config.Config {
 	unmatched, externalDefault := "error", "deny"
 	return config.Config{SchemaVersion: 1, Project: config.Project{Root: root, IncludeTests: &no, BuildTags: []string{}}, Rules: []config.Rule{{ID: "ARCH001", Kind: "layer_dependencies", Description: &desc, Severity: "error", Unmatched: &unmatched, AllowSameLayer: &yes, AllowStdlib: &no, ExternalDefault: &externalDefault, Layers: []config.Layer{{Name: "handler", Packages: []string{"handler/..."}, Allow: []string{}, AllowExternal: []string{}}, {Name: "repo", Packages: []string{"repo/..."}, Allow: []string{}, AllowExternal: []string{}}}}}}
 }
+
 func TestDirectImports(t *testing.T) {
 	c := fixture(t)
 	r, err := Run(context.Background(), c)
@@ -64,6 +66,7 @@ func TestDirectImports(t *testing.T) {
 		t.Fatalf("warning: %+v %v", r, err)
 	}
 }
+
 func TestIncompleteAndUnclassified(t *testing.T) {
 	for _, mode := range []string{"nested", "missing", "syntax", "ambiguous", "unclassified"} {
 		t.Run(mode, func(t *testing.T) {
@@ -91,6 +94,7 @@ func TestIncompleteAndUnclassified(t *testing.T) {
 		})
 	}
 }
+
 func TestExternalAndSameLayer(t *testing.T) {
 	c := fixture(t)
 	external := t.TempDir()

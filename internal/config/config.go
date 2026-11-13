@@ -14,11 +14,13 @@ type Config struct {
 	Project       Project `toml:"project"`
 	Rules         []Rule  `toml:"rules"`
 }
+
 type Project struct {
 	Root         string   `toml:"root"`
 	IncludeTests *bool    `toml:"include_tests"`
 	BuildTags    []string `toml:"build_tags"`
 }
+
 type Rule struct {
 	ID              string        `toml:"id"`
 	Kind            string        `toml:"kind"`
@@ -32,6 +34,7 @@ type Rule struct {
 	Format          *SourceFormat `toml:"format"`
 	Layout          *FileLayout   `toml:"layout"`
 }
+
 type Layer struct {
 	Name          string   `toml:"name"`
 	Packages      []string `toml:"packages"`
@@ -57,6 +60,7 @@ func Load(filename string) (Config, error) {
 	c.Project.Root, err = filepath.Abs(c.Project.Root)
 	return c, err
 }
+
 func (c Config) Validate() error {
 	if c.SchemaVersion != 1 {
 		return fmt.Errorf("schema_version must be 1")
@@ -140,6 +144,7 @@ func (c Config) Validate() error {
 	}
 	return nil
 }
+
 func validPattern(p string) bool {
 	if p == "." || p == "..." {
 		return true
