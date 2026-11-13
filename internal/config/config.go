@@ -9,18 +9,21 @@ import (
 	"strings"
 )
 
+// Config holds project settings and validated rule definitions.
 type Config struct {
 	SchemaVersion int     `toml:"schema_version"`
 	Project       Project `toml:"project"`
 	Rules         []Rule  `toml:"rules"`
 }
 
+// Project selects the module root and build conditions.
 type Project struct {
 	Root         string   `toml:"root"`
 	IncludeTests *bool    `toml:"include_tests"`
 	BuildTags    []string `toml:"build_tags"`
 }
 
+// Rule defines one check and its severity.
 type Rule struct {
 	ID              string        `toml:"id"`
 	Kind            string        `toml:"kind"`
@@ -33,8 +36,11 @@ type Rule struct {
 	Layers          []Layer       `toml:"layers"`
 	Format          *SourceFormat `toml:"format"`
 	Layout          *FileLayout   `toml:"layout"`
+	Comments        *Comments     `toml:"comments"`
+	Files           *FilePolicy   `toml:"files"`
 }
 
+// Layer assigns packages and declares their allowed dependencies.
 type Layer struct {
 	Name          string   `toml:"name"`
 	Packages      []string `toml:"packages"`
@@ -42,6 +48,7 @@ type Layer struct {
 	AllowExternal []string `toml:"allow_external"`
 }
 
+// Load decodes a rule file and resolves its project root.
 func Load(filename string) (Config, error) {
 	var c Config
 	md, err := toml.DecodeFile(filename, &c)
@@ -61,6 +68,7 @@ func Load(filename string) (Config, error) {
 	return c, err
 }
 
+// Validate rejects incomplete or unsupported rule definitions.
 func (c Config) Validate() error {
 	if c.SchemaVersion != 1 {
 		return fmt.Errorf("schema_version must be 1")
@@ -82,6 +90,32 @@ func (c Config) Validate() error {
 		ids[r.ID] = true
 		if r.Description == nil || (r.Severity != "error" && r.Severity != "warning") {
 			return fmt.Errorf("rule %s: missing or invalid behavior fields", r.ID)
+		}
+		switch r.Kind {
+		case "comment_budget", "required_comments", "comment_format", "comment_line_length", "file_policy":
+			if r.Format != nil || r.Layout != nil || r.Layers != nil || r.Unmatched != nil ||
+				r.AllowSameLayer != nil || r.AllowStdlib != nil || r.ExternalDefault != nil {
+				return fmt.Errorf("rule %s: unrelated fields are not allowed", r.ID)
+			}
+			if r.Kind == "file_policy" {
+				if r.Files == nil || r.Comments != nil {
+					return fmt.Errorf("rule %s requires only files", r.ID)
+				}
+				if err := r.Files.validate(); err != nil {
+					return fmt.Errorf("rule %s: %w", r.ID, err)
+				}
+			} else {
+				if r.Comments == nil || r.Files != nil {
+					return fmt.Errorf("rule %s requires only comments", r.ID)
+				}
+				if err := r.Comments.validate(r.Kind); err != nil {
+					return fmt.Errorf("rule %s: %w", r.ID, err)
+				}
+			}
+			continue
+		}
+		if r.Comments != nil || r.Files != nil {
+			return fmt.Errorf("rule %s: comments/files not allowed", r.ID)
 		}
 		switch r.Kind {
 		case "source_format", "file_layout":

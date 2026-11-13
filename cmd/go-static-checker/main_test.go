@@ -144,3 +144,57 @@ required_directories = []
 		t.Fatalf("exit=%d out=%s err=%s", code, &out, &stderr)
 	}
 }
+
+func TestCommentRulesCLI(t *testing.T) {
+	root := t.TempDir()
+	template := `schema_version = 1
+[project]
+root = "."
+include_tests = false
+build_tags = []
+[[rules]]
+id = "COMMENTS"
+kind = "required_comments"
+description = "exported documentation"
+severity = "error"
+[rules.comments]
+packages = ["..."]
+declarations = ["function"]
+visibility = "exported"
+include_tests = false
+include_generated = false
+exclude_go_directives = true
+position = "doc"
+require_nonempty = true
+`
+	for name, body := range map[string]string{"go.mod": "module example.com/app\n\ngo 1.24\n", "app.go": "package app\nfunc Exported() {}\n"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, severity := range []string{"error", "warning"} {
+		if err := os.WriteFile(filepath.Join(root, "rules.toml"), []byte(strings.Replace(template, `severity = "error"`, `severity = "`+severity+`"`, 1)), 0600); err != nil {
+			t.Fatal(err)
+		}
+		var out, stderr bytes.Buffer
+		code := run([]string{"-config", filepath.Join(root, "rules.toml"), "-format", "json"}, &out, &stderr)
+		want := 1
+		if severity == "warning" {
+			want = 0
+		}
+		if code != want || stderr.Len() != 0 {
+			t.Fatalf("exit=%d out=%s err=%s", code, &out, &stderr)
+		}
+		var report checker.Report
+		if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+			t.Fatal(err)
+		}
+		if len(report.Diagnostics) != 1 {
+			t.Fatal(report)
+		}
+		d := report.Diagnostics[0]
+		if d.Code != "missing_required_comment" || d.Severity != severity || d.File != "app.go" || d.Line != 2 || d.Column != 1 {
+			t.Fatal(d)
+		}
+	}
+}

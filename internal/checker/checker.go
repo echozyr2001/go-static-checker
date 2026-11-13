@@ -1,4 +1,4 @@
-// Package checker evaluates project rules under the active Go build environment.
+// Package checker evaluates rules for the active Go build environment.
 package checker
 
 import (
@@ -19,6 +19,7 @@ import (
 	"strings"
 )
 
+// Diagnostic identifies a rule violation and its source location.
 type Diagnostic struct {
 	RuleID        string `json:"rule_id"`
 	Code          string `json:"code"`
@@ -33,6 +34,7 @@ type Diagnostic struct {
 	TargetLayer   string `json:"target_layer"`
 }
 
+// Report records the checked environment and rule violations.
 type Report struct {
 	Environment map[string]string `json:"environment"`
 	BuildTags   []string          `json:"build_tags"`
@@ -56,6 +58,7 @@ type source struct {
 	}
 }
 
+// ExitCode returns 1 for error violations and 0 otherwise.
 func (r Report) ExitCode() int {
 	for _, d := range r.Diagnostics {
 		if d.Severity == "error" {
@@ -65,6 +68,7 @@ func (r Report) ExitCode() int {
 	return 0
 }
 
+// Run loads the project and evaluates all configured rules.
 func Run(ctx context.Context, c config.Config) (Report, error) {
 	report := Report{Diagnostics: []Diagnostic{}, BuildTags: c.Project.BuildTags}
 	if err := c.Validate(); err != nil {
@@ -170,6 +174,20 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 	report.Files += len(testSources)
 	for _, r := range c.Rules {
 		switch r.Kind {
+		case "comment_budget", "required_comments", "comment_format", "comment_line_length":
+			diagnostics, err := checkComments(r, sources)
+			if err != nil {
+				return report, err
+			}
+			report.Diagnostics = append(report.Diagnostics, diagnostics...)
+			continue
+		case "file_policy":
+			diagnostics, err := checkFilePolicy(root, r)
+			if err != nil {
+				return report, err
+			}
+			report.Diagnostics = append(report.Diagnostics, diagnostics...)
+			continue
 		case "source_format":
 			diagnostics, err := checkSourceFormat(r, sources)
 			if err != nil {
