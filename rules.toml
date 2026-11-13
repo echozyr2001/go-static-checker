@@ -77,3 +77,19 @@ required_files = [
   "cmd/go-static-checker/main.go",
 ]
 required_directories = ["internal/config", "internal/checker"]
+
+# 函数、方法和结构体声明之间至少保留一行空行，包含测试源码。
+[[rules]]
+id = "FMT002"
+kind = "source_format"
+description = "相邻函数、方法和结构体声明之间至少保留一行空行"
+severity = "error"
+
+[rules.format]
+packages = ["..."]
+max_line_length = 0
+tab_width = 4
+file_name_pattern = ""
+package_name_pattern = ""
+min_blank_lines_between_declarations = 1
+include_tests = true
