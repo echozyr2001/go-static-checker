@@ -31,7 +31,8 @@ func fixture(t *testing.T) config.Config {
 	write(t, root, "repo/repo.go", "package repo\nconst Value = 1\n")
 	yes, no := true, false
 	desc := "test"
-	return config.Config{SchemaVersion: 1, Project: config.Project{Root: root, IncludeTests: &no, BuildTags: []string{}}, Rules: []config.Rule{{ID: "ARCH001", Kind: "layer_dependencies", Description: &desc, Severity: "error", Unmatched: "error", AllowSameLayer: &yes, AllowStdlib: &no, ExternalDefault: "deny", Layers: []config.Layer{{Name: "handler", Packages: []string{"handler/..."}, Allow: []string{}, AllowExternal: []string{}}, {Name: "repo", Packages: []string{"repo/..."}, Allow: []string{}, AllowExternal: []string{}}}}}}
+	unmatched, externalDefault := "error", "deny"
+	return config.Config{SchemaVersion: 1, Project: config.Project{Root: root, IncludeTests: &no, BuildTags: []string{}}, Rules: []config.Rule{{ID: "ARCH001", Kind: "layer_dependencies", Description: &desc, Severity: "error", Unmatched: &unmatched, AllowSameLayer: &yes, AllowStdlib: &no, ExternalDefault: &externalDefault, Layers: []config.Layer{{Name: "handler", Packages: []string{"handler/..."}, Allow: []string{}, AllowExternal: []string{}}, {Name: "repo", Packages: []string{"repo/..."}, Allow: []string{}, AllowExternal: []string{}}}}}}
 }
 func TestDirectImports(t *testing.T) {
 	c := fixture(t)

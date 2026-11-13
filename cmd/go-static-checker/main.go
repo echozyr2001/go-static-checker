@@ -41,12 +41,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		err = json.NewEncoder(stdout).Encode(report)
 	} else {
 		for _, d := range report.Diagnostics {
-			if _, err = fmt.Fprintf(stdout, "%s:%d:%d: %s %s %s: %s\n", d.File, d.Line, d.Column, d.Severity, d.RuleID, d.Code, d.Message); err != nil {
+			_, err = fmt.Fprintf(stdout, "%s:%d:%d: %s %s %s: %s\n",
+				d.File, d.Line, d.Column, d.Severity, d.RuleID, d.Code, d.Message)
+			if err != nil {
 				break
 			}
 		}
 		if err == nil {
-			_, err = fmt.Fprintf(stdout, "Checked %d packages, %d files (%s/%s, CGO_ENABLED=%s, %s, tags=%v)\n", report.Packages, report.Files, report.Environment["GOOS"], report.Environment["GOARCH"], report.Environment["CGO_ENABLED"], report.Environment["GOVERSION"], report.BuildTags)
+			_, err = fmt.Fprintf(stdout, "Checked %d packages, %d files (%s/%s, CGO_ENABLED=%s, %s, tags=%v)\n",
+				report.Packages, report.Files, report.Environment["GOOS"], report.Environment["GOARCH"],
+				report.Environment["CGO_ENABLED"], report.Environment["GOVERSION"], report.BuildTags)
 		}
 	}
 	if err != nil {

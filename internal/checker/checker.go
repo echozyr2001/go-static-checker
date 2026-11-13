@@ -1,4 +1,4 @@
-// Package checker evaluates direct imports under the active Go build environment.
+// Package checker evaluates project rules under the active Go build environment.
 package checker
 
 import (
@@ -37,6 +37,18 @@ type Report struct {
 	Packages    int               `json:"packages"`
 	Files       int               `json:"files"`
 	Diagnostics []Diagnostic      `json:"diagnostics"`
+}
+
+type source struct {
+	pkg             *packages.Package
+	file            string
+	content         []byte
+	packageName     string
+	packagePosition token.Position
+	imports         []struct {
+		target string
+		pos    token.Position
+	}
 }
 
 func (r Report) ExitCode() int {
@@ -83,7 +95,12 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 	if err := json.Unmarshal(out, &report.Environment); err != nil {
 		return report, err
 	}
-	pkgs, err := packages.Load(&packages.Config{Context: ctx, Dir: root, Env: env, Mode: packages.NeedName | packages.NeedFiles | packages.NeedImports | packages.NeedDeps | packages.NeedModule, BuildFlags: []string{"-mod=readonly", "-tags=" + strings.Join(c.Project.BuildTags, ",")}}, "./...")
+	pkgs, err := packages.Load(&packages.Config{
+		Context: ctx, Dir: root, Env: env,
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedImports |
+			packages.NeedDeps | packages.NeedModule,
+		BuildFlags: []string{"-mod=readonly", "-tags=" + strings.Join(c.Project.BuildTags, ",")},
+	}, "./...")
 	if err != nil {
 		return report, err
 	}
@@ -108,19 +125,15 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 		own[p.PkgPath] = p
 	}
 	report.Packages = len(own)
-	type source struct {
-		pkg     *packages.Package
-		file    string
-		imports []struct {
-			target string
-			pos    token.Position
-		}
-	}
 	var sources []source
 	for _, p := range pkgs {
 		for _, filename := range p.GoFiles {
 			fset := token.NewFileSet()
-			f, err := parser.ParseFile(fset, filename, nil, parser.AllErrors)
+			content, err := os.ReadFile(filename)
+			if err != nil {
+				return report, err
+			}
+			f, err := parser.ParseFile(fset, filename, content, parser.AllErrors)
 			if err != nil {
 				return report, err
 			}
@@ -128,7 +141,8 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 			if err != nil {
 				return report, err
 			}
-			s := source{pkg: p, file: filepath.ToSlash(rel)}
+			s := source{pkg: p, file: filepath.ToSlash(rel), content: content,
+				packageName: f.Name.Name, packagePosition: fset.PositionFor(f.Name.Pos(), false)}
 			for _, imp := range f.Imports {
 				target, err := strconv.Unquote(imp.Path.Value)
 				if err != nil {
@@ -144,6 +158,22 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 		}
 	}
 	for _, r := range c.Rules {
+		switch r.Kind {
+		case "source_format":
+			diagnostics, err := checkSourceFormat(r, sources)
+			if err != nil {
+				return report, err
+			}
+			report.Diagnostics = append(report.Diagnostics, diagnostics...)
+			continue
+		case "file_layout":
+			diagnostics, err := checkFileLayout(root, r)
+			if err != nil {
+				return report, err
+			}
+			report.Diagnostics = append(report.Diagnostics, diagnostics...)
+			continue
+		}
 		layers := map[string]*config.Layer{}
 		for _, p := range pkgs {
 			rel := strings.TrimPrefix(p.PkgPath, p.Module.Path)
@@ -165,7 +195,10 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 				}
 			}
 			if layers[p.PkgPath] == nil {
-				report.Diagnostics = append(report.Diagnostics, Diagnostic{RuleID: r.ID, Code: "unclassified_package", Severity: r.Severity, Message: "package does not belong to a layer", SourcePackage: p.PkgPath})
+				report.Diagnostics = append(report.Diagnostics, Diagnostic{
+					RuleID: r.ID, Code: "unclassified_package", Severity: r.Severity,
+					Message: "package does not belong to a layer", SourcePackage: p.PkgPath,
+				})
 			}
 		}
 		for _, s := range sources {
@@ -204,7 +237,7 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 						code = "forbidden_stdlib_dependency"
 					}
 				} else {
-					allowed := r.ExternalDefault == "allow"
+					allowed := *r.ExternalDefault == "allow"
 					for _, pat := range from.AllowExternal {
 						allowed = allowed || config.Match(pat, imp.target)
 					}
@@ -213,7 +246,13 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 					}
 				}
 				if code != "" {
-					report.Diagnostics = append(report.Diagnostics, Diagnostic{RuleID: r.ID, Code: code, Severity: r.Severity, Message: fmt.Sprintf("%s may not import %s", s.pkg.PkgPath, imp.target), File: s.file, Line: imp.pos.Line, Column: imp.pos.Column, SourcePackage: s.pkg.PkgPath, TargetPackage: imp.target, SourceLayer: from.Name, TargetLayer: targetLayer})
+					report.Diagnostics = append(report.Diagnostics, Diagnostic{
+						RuleID: r.ID, Code: code, Severity: r.Severity,
+						Message: fmt.Sprintf("%s may not import %s", s.pkg.PkgPath, imp.target),
+						File:    s.file, Line: imp.pos.Line, Column: imp.pos.Column,
+						SourcePackage: s.pkg.PkgPath, TargetPackage: imp.target,
+						SourceLayer: from.Name, TargetLayer: targetLayer,
+					})
 				}
 			}
 		}
@@ -231,6 +270,9 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 		}
 		if a.RuleID != b.RuleID {
 			return a.RuleID < b.RuleID
+		}
+		if a.Code != b.Code {
+			return a.Code < b.Code
 		}
 		return a.SourcePackage < b.SourcePackage
 	})
