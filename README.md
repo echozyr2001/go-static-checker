@@ -24,6 +24,19 @@ go build -o bin/go-static-checker ./cmd/go-static-checker
 
 主文件可以用顶层 `includes` 引用多个规则文件。命令行仍使用 `-config rules.toml`，工具合并所有规则后只加载一次项目。
 
+仓库自身的入口为 [rules.toml](rules.toml)，项目设置保留在入口中，规则按类型存放在 `rules/`：
+
+| 文件 | 规则 ID |
+|---|---|
+| [layer_dependencies.toml](rules/layer_dependencies.toml) | ARCH001 |
+| [source_format.toml](rules/source_format.toml) | FMT001、FMT002 |
+| [file_layout.toml](rules/file_layout.toml) | LAYOUT001 |
+| [comment_budget.toml](rules/comment_budget.toml) | COMMENT001 |
+| [required_comments.toml](rules/required_comments.toml) | COMMENT002 |
+| [comment_format.toml](rules/comment_format.toml) | COMMENT003 |
+| [comment_line_length.toml](rules/comment_line_length.toml) | COMMENT004 |
+| [file_policy.toml](rules/file_policy.toml) | DOC001 |
+
 主文件示例：
 
 ```toml
@@ -202,7 +215,7 @@ required_directories = ["internal/domain", "internal/service"]
 
 ### 注释预算、说明和格式
 
-完整配置见根目录 [rules.toml](rules.toml) 中的 `COMMENT001` 至 `COMMENT004`。每种规则使用独立的 `[rules.comments]`，所有行为字段必须显式填写。
+完整配置见 `rules/` 中的 [注释预算](rules/comment_budget.toml)、[必需说明](rules/required_comments.toml)、[注释格式](rules/comment_format.toml) 和 [注释列宽](rules/comment_line_length.toml)。每种规则使用独立的 `[rules.comments]`，所有行为字段必须显式填写。
 
 | 规则类型 | 检查内容 |
 |---|---|

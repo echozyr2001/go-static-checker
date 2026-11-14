@@ -1,0 +1,33 @@
+schema_version = 1
+
+# 分层依赖：cli → checker → config；cli 也可以直接读取 config。
+# allow 仅授权直接导入，不传递授权。
+[[rules]]
+id = "ARCH001"
+kind = "layer_dependencies"
+description = "检查工具自身的分层依赖"
+severity = "error"
+# 新增本模块包必须归层；匹配多个层会报配置错误。
+unmatched = "error"
+allow_same_layer = true
+allow_stdlib = true
+# 第三方依赖必须在所属层的 allow_external 中显式放行。
+external_default = "deny"
+
+[[rules.layers]]
+name = "cli"
+packages = ["cmd/..."]
+allow = ["config", "checker"]
+allow_external = []
+
+[[rules.layers]]
+name = "checker"
+packages = ["internal/checker/..."]
+allow = ["config"]
+allow_external = ["golang.org/x/tools/go/packages"]
+
+[[rules.layers]]
+name = "config"
+packages = ["internal/config/..."]
+allow = []
+allow_external = ["github.com/BurntSushi/toml"]

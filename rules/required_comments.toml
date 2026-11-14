@@ -1,0 +1,18 @@
+schema_version = 1
+
+[[rules]]
+id = "COMMENT002"
+kind = "required_comments"
+description = "导出的函数、方法、结构体和接口必须有声明说明"
+severity = "error"
+
+[rules.comments]
+packages = ["..."]
+declarations = ["function", "method", "struct", "interface"]
+visibility = "exported"
+include_tests = false
+include_generated = false
+exclude_go_directives = true
+# 说明必须紧邻声明且含有非空文本；body 和 trailing 不能替代 doc。
+position = "doc"
+require_nonempty = true

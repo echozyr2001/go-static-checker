@@ -8,10 +8,7 @@ import (
 )
 
 func TestCommentAndFileConfigStrict(t *testing.T) {
-	original, err := os.ReadFile("../../rules.toml")
-	if err != nil {
-		t.Fatal(err)
-	}
+	original := repositoryRuleText(t)
 	for _, tc := range []struct{ name, old, replacement, want string }{
 		{"missing limit", "max_comment_percent = 20", "", "max_comment_percent is required"},
 		{"unknown field", "max_comment_percent = 20", "max_comments_percent = 20", "unknown"},

@@ -21,10 +21,7 @@ func TestMatch(t *testing.T) {
 }
 
 func TestLoadStrict(t *testing.T) {
-	original, err := os.ReadFile("../../rules.toml")
-	if err != nil {
-		t.Fatal(err)
-	}
+	original := repositoryRuleText(t)
 	for _, tc := range []struct{ name, old, new, want string }{
 		{"valid", "", "", ""},
 		{"unknown", "allow_stdlib", "allow_stdlbi", "unknown"},
@@ -58,10 +55,7 @@ func TestLoadStrict(t *testing.T) {
 }
 
 func TestAbsoluteProjectRoot(t *testing.T) {
-	original, err := os.ReadFile("../../rules.toml")
-	if err != nil {
-		t.Fatal(err)
-	}
+	original := repositoryRuleText(t)
 	root := t.TempDir()
 	data := strings.Replace(string(original), `root = "."`, `root = "`+filepath.ToSlash(root)+`"`, 1)
 	filename := filepath.Join(t.TempDir(), "rules.toml")

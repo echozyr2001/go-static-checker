@@ -1,0 +1,38 @@
+schema_version = 1
+
+# 注释和文档规则用于仓库自身的 CI 检查。
+# 注释归属：doc 为紧邻声明的说明，body 为声明内部独立注释，
+# trailing 为代码同行注释。字段注释计入所属结构体或接口，
+# 局部类型与匿名函数中的注释计入外层声明；同一块内不重复计数。
+# package 汇总所选构建环境中同一导入路径的文件，包含文件头及声明说明。
+# 各块独立检查：子块的代码与注释也计入外层块和 package 的预算。
+# Go 指令不计入注释预算，也不能代替说明注释；列宽规则仍检查指令行。
+
+[[rules]]
+id = "COMMENT001"
+kind = "comment_budget"
+description = "每个结构块的注释预算为注释与代码总行数的 20%，向上取整且至少允许 1 行"
+severity = "error"
+
+[rules.comments]
+packages = ["..."]
+declarations = ["function", "method", "struct", "package"]
+visibility = "all"
+include_tests = false
+include_generated = false
+exclude_go_directives = true
+# 按注释占用的物理行计数，块注释内部空行计入；同一物理行不重复计数。
+count_unit = "physical_lines"
+# 有效代码行：去掉注释后仍有代码；排除空白行及仅含下列分隔符的行。
+# 混合代码与注释的行分别计入代码行与注释行。字符串内容不按注释识别。
+denominator = "comment_and_code_lines"
+exclude_delimiter_only_lines = ["{", "}", "(", ")", ";"]
+# 基础占比：comment_lines / (comment_lines + effective_code_lines) <= 0.2。
+# 总量为上述两类行数之和，不包括空白行和被排除的分隔符行。
+# 实际预算：max(1, ceil((comment_lines + effective_code_lines) * 20 / 100))。
+# 注释行数不超过此预算即通过；向上取整与最低额度允许实际占比略超 20%。
+# 例如 3 行代码 + 1 行注释通过；3 行代码 + 2 行注释不通过。
+# 至少允许 1 行是预算下限，不要求每个块实际写注释；总量为 0 时无需计算比值。
+max_comment_percent = 20
+rounding = "ceil"
+min_allowed_comment_lines = 1

@@ -1,0 +1,20 @@
+schema_version = 1
+
+[[rules]]
+id = "DOC001"
+kind = "file_policy"
+description = "Markdown 仅允许项目根目录的 README.md"
+severity = "error"
+
+[rules.files]
+# 相对于 project.root 扫描，不受 Go 构建标签影响。
+extensions = [".md"]
+extension_case_sensitive = false
+default = "deny"
+# 路径大小写精确匹配，仅允许根级 README.md；子目录 README.md 也不允许。
+allowed_paths = ["README.md"]
+allowed_directories = []
+# 仅排除 Git 元数据，docs、vendor 和其他隐藏目录也受位置限制。
+excluded_directories = [".git"]
+# 不遍历目录符号链接；指向 Markdown 的文件符号链接按链接所在位置检查。
+follow_directory_symlinks = false

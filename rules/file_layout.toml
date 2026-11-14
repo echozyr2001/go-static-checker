@@ -1,0 +1,19 @@
+schema_version = 1
+
+# 项目结构：精确路径相对于 project.root，不禁止其他文件或目录。
+[[rules]]
+id = "LAYOUT001"
+kind = "file_layout"
+description = "保留模块定义、使用说明、规则示例、CI 配置及命令入口"
+severity = "error"
+
+[rules.layout]
+required_files = [
+  "go.mod",
+  "go.sum",
+  "README.md",
+  "rules.toml",
+  ".github/workflows/ci.yml",
+  "cmd/go-static-checker/main.go",
+]
+required_directories = ["internal/config", "internal/checker"]

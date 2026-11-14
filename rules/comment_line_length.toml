@@ -1,0 +1,21 @@
+schema_version = 1
+
+# 第 80 列为包含式上限，约束完整物理行，不只是去掉 // 后的正文。
+[[rules]]
+id = "COMMENT004"
+kind = "comment_line_length"
+description = "包含注释的源码行不得超过第 80 列"
+severity = "error"
+
+[rules.comments]
+packages = ["..."]
+include_tests = false
+include_generated = false
+exclude_go_directives = false
+# 覆盖声明说明、块内注释、行尾注释和文件头；块注释的每行均检查。
+positions = ["doc", "body", "trailing", "file"]
+max_column = 80
+# 从第 1 列计数，包含缩进、注释标记及同一行的代码；LF/CRLF 不计宽。
+# Unicode 码点各占 1 列，Tab 前进至下一个 4 的倍数制表位。
+column_metric = "unicode_codepoints"
+tab_width = 4

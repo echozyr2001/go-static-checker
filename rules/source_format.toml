@@ -1,0 +1,35 @@
+schema_version = 1
+
+# 源码格式：只检查当前构建环境选中的生产文件。
+[[rules]]
+id = "FMT001"
+kind = "source_format"
+description = "生产源码行宽不超过 120，文件名与包名使用小写"
+severity = "error"
+
+[rules.format]
+packages = ["..."]
+# Unicode 码点计宽，中文计为 1；换行符不计入行宽。
+max_line_length = 120
+# Tab 前进到下一个 4 的倍数位置。
+tab_width = 4
+# 正则匹配整个名称；文件名包含 .go 扩展名。
+# TOML 单引号字符串中的反斜杠不需要额外转义。
+file_name_pattern = '[a-z][a-z0-9_]*\.go'
+package_name_pattern = '[a-z][a-z0-9]*'
+
+# 函数、方法和结构体声明之间至少保留一行空行，包含测试源码。
+[[rules]]
+id = "FMT002"
+kind = "source_format"
+description = "相邻函数、方法和结构体声明之间至少保留一行空行"
+severity = "error"
+
+[rules.format]
+packages = ["..."]
+max_line_length = 0
+tab_width = 4
+file_name_pattern = ""
+package_name_pattern = ""
+min_blank_lines_between_declarations = 1
+include_tests = true
