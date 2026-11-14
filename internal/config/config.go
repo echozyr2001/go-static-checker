@@ -3,9 +3,7 @@ package config
 
 import (
 	"fmt"
-	"github.com/BurntSushi/toml"
 	"path"
-	"path/filepath"
 	"strings"
 )
 
@@ -46,26 +44,6 @@ type Layer struct {
 	Packages      []string `toml:"packages"`
 	Allow         []string `toml:"allow"`
 	AllowExternal []string `toml:"allow_external"`
-}
-
-// Load decodes a rule file and resolves its project root.
-func Load(filename string) (Config, error) {
-	var c Config
-	md, err := toml.DecodeFile(filename, &c)
-	if err != nil {
-		return c, err
-	}
-	if keys := md.Undecoded(); len(keys) > 0 {
-		return c, fmt.Errorf("unknown configuration fields: %v", keys)
-	}
-	if err := c.Validate(); err != nil {
-		return c, err
-	}
-	if !filepath.IsAbs(c.Project.Root) {
-		c.Project.Root = filepath.Join(filepath.Dir(filename), c.Project.Root)
-	}
-	c.Project.Root, err = filepath.Abs(c.Project.Root)
-	return c, err
 }
 
 // Validate rejects incomplete or unsupported rule definitions.
