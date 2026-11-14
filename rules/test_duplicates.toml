@@ -1,0 +1,13 @@
+schema_version = 1
+
+[[rules]]
+id = "TEST001"
+kind = "test_duplicates"
+description = "提示重复测试体和可静态确认的重复表驱动用例"
+severity = "warning"
+
+[rules.tests]
+packages = ["..."]
+include_generated = false
+duplicate_bodies = true
+duplicate_cases = true

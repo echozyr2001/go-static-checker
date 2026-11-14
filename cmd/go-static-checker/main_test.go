@@ -277,3 +277,86 @@ required_directories = []
 		t.Fatalf("exit=%d out=%s err=%s", code, &out, &stderr)
 	}
 }
+
+func TestTestQualityCLI(t *testing.T) {
+	root := t.TempDir()
+	template := `schema_version = 1
+[project]
+root = "."
+include_tests = false
+build_tags = []
+[[rules]]
+id = "DUP"
+kind = "test_duplicates"
+description = "duplicates"
+severity = "warning"
+[rules.tests]
+packages = ["..."]
+include_generated = false
+duplicate_bodies = true
+duplicate_cases = true
+[[rules]]
+id = "WAIT"
+kind = "test_waiting"
+description = "waiting"
+severity = "warning"
+[rules.tests]
+packages = ["..."]
+include_generated = false
+`
+	files := map[string]string{
+		"go.mod": "module example.com/app\n\ngo 1.27.3\n",
+		"app.go": "package app\n",
+		"app_test.go": `package app
+import("testing";"time")
+func TestOne(t *testing.T){t.Log(1)}
+func TestTwo(t *testing.T){t.Log(1)}
+func TestRows(t *testing.T){
+ for _,tc:=range []struct{name string;input int}{{"a",1},{"b",1}} {
+ t.Run(tc.name,func(t *testing.T){t.Log(tc.input)})
+ }
+}
+func TestWait(t *testing.T){time.Sleep(time.Second)}
+`,
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filename := filepath.Join(root, "rules.toml")
+	for _, severity := range []string{"warning", "error"} {
+		text := strings.ReplaceAll(template, `severity = "warning"`, `severity = "`+severity+`"`)
+		if err := os.WriteFile(filename, []byte(text), 0600); err != nil {
+			t.Fatal(err)
+		}
+		var out, stderr bytes.Buffer
+		code := run([]string{"-config", filename, "-format", "json"}, &out, &stderr)
+		want := 0
+		if severity == "error" {
+			want = 1
+		}
+		if code != want || stderr.Len() != 0 {
+			t.Fatalf("exit=%d out=%s err=%s", code, &out, &stderr)
+		}
+		var report checker.Report
+		if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+			t.Fatal(err)
+		}
+		if len(report.Diagnostics) != 3 {
+			t.Fatal(report)
+		}
+		for i, want := range []string{"duplicate_test_body", "duplicate_test_case", "real_time_wait"} {
+			if report.Diagnostics[i].Code != want || report.Diagnostics[i].Severity != severity {
+				t.Fatal(report.Diagnostics)
+			}
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "app_test.go"), []byte("package app\nvar _ = unknown\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, stderr bytes.Buffer
+	if code := run([]string{"-config", filename}, &out, &stderr); code != 2 || out.Len() != 0 || !strings.Contains(stderr.String(), "unknown") {
+		t.Fatalf("exit=%d out=%s err=%s", code, &out, &stderr)
+	}
+}

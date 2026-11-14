@@ -36,6 +36,7 @@ type Rule struct {
 	Layout          *FileLayout   `toml:"layout"`
 	Comments        *Comments     `toml:"comments"`
 	Files           *FilePolicy   `toml:"files"`
+	Tests           *TestChecks   `toml:"tests"`
 }
 
 // Layer assigns packages and declares their allowed dependencies.
@@ -68,6 +69,15 @@ func (c Config) Validate() error {
 		ids[r.ID] = true
 		if r.Description == nil || (r.Severity != "error" && r.Severity != "warning") {
 			return fmt.Errorf("rule %s: missing or invalid behavior fields", r.ID)
+		}
+		if r.Kind == "test_duplicates" || r.Kind == "test_waiting" {
+			if err := r.validateTests(); err != nil {
+				return fmt.Errorf("rule %s: %w", r.ID, err)
+			}
+			continue
+		}
+		if r.Tests != nil {
+			return fmt.Errorf("rule %s: tests not allowed for %s", r.ID, r.Kind)
 		}
 		switch r.Kind {
 		case "comment_budget", "required_comments", "comment_format", "comment_line_length", "file_policy":

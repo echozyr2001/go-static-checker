@@ -1,0 +1,11 @@
+schema_version = 1
+
+[[rules]]
+id = "TEST002"
+kind = "test_waiting"
+description = "提示测试及本包测试 helper 中的真实时间等待"
+severity = "warning"
+
+[rules.tests]
+packages = ["..."]
+include_generated = false
