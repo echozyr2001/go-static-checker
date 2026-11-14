@@ -91,3 +91,56 @@ on_unknown="` + tc.unknown + `"
 		})
 	}
 }
+
+func TestFormalCLIExport(t *testing.T) {
+	root := t.TempDir()
+	for file, body := range map[string]string{
+		"go.mod": "module example.com/app\n\ngo 1.27.3\n",
+		"app.go": "package app\nfunc Entry(){}\n",
+		"rules.toml": `schema_version=1
+[project]
+root="."
+include_tests=false
+build_tags=[]
+[[rules]]
+id="C"
+kind="call_contract"
+description="contract"
+severity="error"
+[rules.contract]
+entries=["example.com/app::Entry"]
+forbidden=["builtin::panic"]
+trusted=[]
+on_unknown="warning"
+`,
+	} {
+		if err := os.WriteFile(filepath.Join(root, file), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	directory := filepath.Join(t.TempDir(), "formal")
+	args := []string{"-config", filepath.Join(root, "rules.toml"), "-export-formal", directory}
+	var out, stderr bytes.Buffer
+	if code := run(args, &out, &stderr); code != 0 {
+		t.Fatalf("exit %d: %s %s", code, &out, &stderr)
+	}
+	for _, file := range []string{"Model.tla", "Model.cfg", "Model.lean", "manifest.json"} {
+		if _, err := os.Stat(filepath.Join(directory, "contract_000", file)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out.Reset()
+	stderr.Reset()
+	if code := run(args, &out, &stderr); code != 2 || out.Len() != 0 || !strings.Contains(stderr.String(), "fresh formal output") {
+		t.Fatalf("exit %d: %s %s", code, &out, &stderr)
+	}
+	if err := os.WriteFile(filepath.Join(root, "app.go"), []byte("package app\nfunc Entry(f func()){f()}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	args[len(args)-1] = filepath.Join(t.TempDir(), "unknown")
+	out.Reset()
+	stderr.Reset()
+	if code := run(args, &out, &stderr); code != 2 || !strings.Contains(stderr.String(), "incomplete") {
+		t.Fatalf("exit %d: %s %s", code, &out, &stderr)
+	}
+}

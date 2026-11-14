@@ -37,6 +37,7 @@ type Diagnostic struct {
 
 // Report records the checked environment and rule violations.
 type Report struct {
+	callModel     analysis.Program
 	Environment   map[string]string `json:"environment"`
 	BuildTags     []string          `json:"build_tags"`
 	Packages      int               `json:"packages"`
@@ -189,6 +190,7 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 			break
 		}
 	}
+	report.callModel = callModel
 	for _, r := range c.Rules {
 		switch r.Kind {
 		case "call_contract":

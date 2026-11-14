@@ -18,6 +18,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	filename := flags.String("config", "rules.toml", "TOML rule file")
 	format := flags.String("format", "text", "report format: text or json")
+	formal := flags.String("export-formal", "", "export TLA+/Lean artifacts to a new directory; does not run provers")
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return 0
@@ -37,6 +38,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
+	}
+	if *formal != "" {
+		if err := report.ExportFormal(c, *formal); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
 	}
 	if *format == "json" {
 		err = json.NewEncoder(stdout).Encode(report)

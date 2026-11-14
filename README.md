@@ -291,6 +291,43 @@ on_unknown = "error"
 
 契约范围从选定函数体开始，不涵盖调用入口前的包初始化、运行时隐式调用、反射目标、C 代码或测试源码。反射 API 等外部调用默认未知，只有显式信任才放行。`builtin::panic` 检查显式 panic，不证明不存在越界、空指针等运行时 panic。其他内建操作仅检查 SSA 中保留的调用；常量折叠掉的操作不在调用图内。分析不证明路径可执行，也不判断 goroutine 的调度顺序，因此静态可达违规可能来自实际不会执行的分支。对完整进程的安全保证需要额外建模。
 
+### TLA+ 与 Lean 实验导出
+
+`-export-formal` 将已有 `call_contract` 导出给 TLC 和 Lean，规则仍只写在 TOML 中。此参数生成文件，不运行验证器，也不把原有 `satisfied` 状态改称为“已通过 Lean 证明”。
+
+```sh
+./bin/go-static-checker -config rules.toml -export-formal /tmp/gsc-formal
+cd /tmp/gsc-formal/contract_000
+java -XX:+UseParallelGC -cp /absolute/path/tla2tools.jar tlc2.TLC -workers 1 -config Model.cfg Model.tla
+/absolute/path/lean Model.lean
+```
+
+输出目录必须不存在，父目录必须存在。每个匹配入口生成一个 `contract_NNN` 子目录：
+
+| 文件 | 内容 |
+|---|---|
+| `Model.tla`、`Model.cfg` | 有限状态调用图及禁止状态不可达的不变量，供 TLC 检查 |
+| `Model.lean` | 初始状态安全、转换保持安全，以及任意有限步可达状态安全的归纳证明 |
+| `manifest.json` | 规则、原分析结果、实际信任假设、状态编号、调用边及源码位置 |
+
+模型中的一步表示沿调用链进入一个被调用函数，不表示程序执行了一步。函数返回、调用先后顺序、资源对象身份和 goroutine 调度尚未建模。命中禁止 API 的边指向禁止状态；已信任外部调用与非禁止内建操作不扩展状态，信任假设保留在清单中。递归形成有限图中的环，不依赖调用深度截断。TLC 的反例状态编号可通过清单映射回源码。
+
+有禁止调用时仍会导出模型，供 TLC 给出反例、Lean 拒绝安全证明。原 CLI 退出码继续由诊断严重程度决定，外部验证器独立返回结果。有未知调用时，无论 `on_unknown` 是否为 warning，导出均返回 `2` 且不创建输出目录。没有调用契约或任一入口超过 128 个模型状态时也拒绝导出。文件写入失败可能留下不完整目录；须选择新目录重试。
+
+Lean 生成代码使用 `decide` 检查有限状态的局部性质，再通过归纳证明 `reachable_safe`，不使用 `sorry`、自定义公理或 `native_decide`。输出同时列出该定理依赖的公理。求解超时、工具缺失和证明失败均不能算作验证通过。
+
+本轮只验证导出的调用可达性模型，尚未证明 Go 到 SSA、SSA 到模型的转换保持语义，也未证明 TLA+ 与 Lean 两份编码等价。这些转换及外部信任项仍属于可信边界。两套工具检查相同的安全性质，暂不增加资源生命周期或并发协议规则。
+
+CI 的必需 `test` 作业增加形式化验证步骤，使用 TLA+ 发布版 v1.7.4（内含 TLC 2.19）及 Lean v4.35.0，下载时核对 SHA-256。它实际检查安全模型、故意违规模型，以及仓库自身的规则导出。普通 `go test` 不要求安装形式化工具；显式设置以下变量可执行相同的后端测试：
+
+```sh
+GSC_TLC_JAR=/absolute/path/tla2tools.jar \
+GSC_LEAN=/absolute/path/lean \
+go test -v ./internal/analysis -run TestFormalBackends -count=1
+```
+
+参考：[TLC 模型检查](https://dl.tlapl.us/tlatoolbox/doc/model/model.html)、[Lean 证明检查机制](https://lean-lang.org/faq/)。
+
 ## 报告和退出码
 
 | 退出码 | 含义 |

@@ -8,6 +8,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -18,3 +19,36 @@ jobs:
       - run: go vet ./...
       - run: go build -o bin/go-static-checker ./cmd/go-static-checker
       - run: ./bin/go-static-checker -config rules.toml
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install pinned formal tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/formal/lean"
+          cd "$RUNNER_TEMP/formal"
+          curl -fLsS --retry 3 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o tla2tools.jar
+          echo '936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  tla2tools.jar' | sha256sum -c -
+          curl -fLsS --retry 3 https://github.com/leanprover/lean4/releases/download/v4.35.0/lean-4.35.0-linux.tar.zst -o lean.tar.zst
+          echo '7289597a44543246c9227b8cae501767e095ce17f6d448b95fc4a8dc97268f6d  lean.tar.zst' | sha256sum -c -
+          tar --zstd -xf lean.tar.zst -C lean --strip-components=1
+      - name: Check safe and forbidden models with TLC and Lean
+        env:
+          GSC_TLC_JAR: ${{ runner.temp }}/formal/tla2tools.jar
+          GSC_LEAN: ${{ runner.temp }}/formal/lean/bin/lean
+        run: go test -v ./internal/analysis -run TestFormalBackends -count=1
+      - name: Export and verify repository contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          go build -o bin/go-static-checker ./cmd/go-static-checker
+          ./bin/go-static-checker -config rules.toml -export-formal "$RUNNER_TEMP/self-formal"
+          for model in "$RUNNER_TEMP/self-formal"/contract_*; do
+            (
+              cd "$model"
+              java -XX:+UseParallelGC -cp "$RUNNER_TEMP/formal/tla2tools.jar" tlc2.TLC -workers 1 -config Model.cfg Model.tla
+              "$RUNNER_TEMP/formal/lean/bin/lean" Model.lean
+            )
+          done
