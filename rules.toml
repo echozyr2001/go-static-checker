@@ -13,7 +13,7 @@ includes = [
 ]
 
 [project]
-# 相对于本配置文件，必须包含 go.mod。
+# 相对于本配置文件，必须包含 go.mod 或 go.work。
 root = "."
 # 当前版本仅支持生产源码；生成代码照常检查。
 include_tests = false

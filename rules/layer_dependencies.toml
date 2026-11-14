@@ -24,7 +24,7 @@ allow_external = []
 name = "checker"
 packages = ["internal/checker/..."]
 allow = ["config"]
-allow_external = ["golang.org/x/tools/go/packages"]
+allow_external = ["golang.org/x/tools/go/packages", "golang.org/x/mod/modfile"]
 
 [[rules.layers]]
 name = "config"
