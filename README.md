@@ -2,7 +2,7 @@
 
 ## 用途
 
-读取 TOML 规则，检查 Go 项目的分层依赖、源码格式、注释和文件位置。支持单模块项目，格式与注释规则可包含测试源码，输出文本或 JSON 报告。
+读取 TOML 规则，检查 Go 项目的分层依赖、源码格式、注释、文件位置和测试质量。支持单模块项目，输出文本或 JSON 报告。
 
 ## 运行
 
@@ -22,7 +22,7 @@ go build -o bin/go-static-checker ./cmd/go-static-checker
 
 ### 拆分规则文件
 
-主文件可以用顶层 `includes` 引用多个规则文件。命令行仍使用 `-config rules.toml`，工具合并所有规则后只加载一次项目。
+主文件可以用顶层 `includes` 引用多个规则文件。命令行仍使用 `-config rules.toml`，工具合并所有规则后统一检查项目，不按配置文件重复执行。
 
 仓库自身的入口为 [rules.toml](rules.toml)，项目设置保留在入口中，规则按类型存放在 `rules/`：
 
@@ -36,6 +36,8 @@ go build -o bin/go-static-checker ./cmd/go-static-checker
 | [comment_format.toml](rules/comment_format.toml) | COMMENT003 |
 | [comment_line_length.toml](rules/comment_line_length.toml) | COMMENT004 |
 | [file_policy.toml](rules/file_policy.toml) | DOC001 |
+| [test_duplicates.toml](rules/test_duplicates.toml) | TEST001 |
+| [test_waiting.toml](rules/test_waiting.toml) | TEST002 |
 
 主文件示例：
 
@@ -193,7 +195,7 @@ include_tests = true
 
 `rules.format.include_tests` 为可选布尔值，默认 `false`。设为 `true` 后，仅当前格式规则增加对匹配包中的测试源码的检查，包括外部测试包和只有测试文件的包。`packages` 仍匹配所属目录对应的模块相对包路径，诊断的 `source_package` 也使用这个所属包路径。测试文件由 `go list` 按当前平台与构建标签选择，同一文件只计数一次。
 
-测试源码只解析语法，不加载测试依赖图或生成测试入口。分层规则仍只检查生产代码，`project.include_tests` 仍须为 `false`。测试文件是否可编译由 `go test` 验证；选中测试源码的解析失败会返回退出码 `2`。
+格式和注释规则只需解析测试语法。启用下文的测试质量规则时，会额外加载选中测试包的类型信息及依赖。分层规则仍只检查生产代码，`project.include_tests` 仍须为 `false`。源码解析或类型加载失败会返回退出码 `2`。
 
 ### 必需文件与目录
 
@@ -252,6 +254,50 @@ max(min_allowed_comment_lines, ceil((C + K) * max_comment_percent / 100))
 
 目前只支持 `default = "deny"` 和 `follow_directory_symlinks = false`。扫描相对于 `project.root`，不受 Go 构建标签影响。不遍历目录符号链接；文件链接自身或最终目标的扩展名匹配时，按链接所在位置检查。断链、权限等读取错误返回退出码 `2`。此规则控制允许位置，必需文件仍由 `file_layout` 指定。
 
+### 测试质量
+
+仓库以 `warning` 启用重复测试与真实时间等待检查。警告提供可疑位置和依据，不代表测试可直接删除，也不自动修改源码。仅有警告时退出码仍为 `0`。
+
+```toml
+[[rules]]
+id = "TEST001"
+kind = "test_duplicates"
+description = "检查重复测试体和静态用例"
+severity = "warning"
+
+[rules.tests]
+packages = ["..."]
+include_generated = false
+duplicate_bodies = true
+duplicate_cases = true
+
+[[rules]]
+id = "TEST002"
+kind = "test_waiting"
+description = "检查测试中的真实时间等待"
+severity = "warning"
+
+[rules.tests]
+packages = ["..."]
+include_generated = false
+```
+
+上述字段均须显式填写。`test_duplicates` 至少开启一个检查项；`test_waiting` 不接受重复检查选项。`packages` 匹配所属目录的模块相对包路径，内部和外部测试包均纳入。只分析当前平台及构建标签选中的 `_test.go`；`include_generated` 控制是否分析生成文件。
+
+入口为符合 Go 测试命名及签名的 `TestXxx(*testing.T)`，也支持未命名的参数。Benchmark、Fuzz、Example 和 TestMain 不作为入口。类型加载由 [go/packages](https://pkg.go.dev/golang.org/x/tools/go/packages) 完成，不执行测试。启用这些规则后，测试及其依赖必须能够完成类型加载；错误返回退出码 `2`，不输出通过报告。报告的文件计数不重复计算已有格式规则选中的测试文件，也不包含生成的测试入口或依赖文件。
+
+**重复测试体。** 同一实际包内比较顶层测试，子测试则在同一父测试下比较。识别直接传给 `t.Run` 的函数字面量，空测试体不报告。比较忽略位置、空白和注释，保留标识符写法、常量、调用顺序与外部绑定。不同闭包捕获变量不会仅因名字相同而匹配；内部与外部测试包分开比较。报告包含首次出现的位置。初始化环境、测试名称和运行顺序仍可能让相同代码承担不同职责，需要人工确认。
+
+**重复表驱动用例。** 识别 `range` 遍历的结构体切片或数组字面量，以及测试内部只用于该遍历的局部表变量。循环内须有可识别的 `t.Run`。只比较所有字段均可静态求值的行，支持常量表达式、标量零值和 nil；函数调用生成的数据、嵌套复合数据等暂不比较。
+
+只有确认字段仅直接用于 `t.Run` 的名称参数，才忽略它的值。字段同时用于断言、日志或其他行为时会保留；整行传给 helper 时也不忽略名称。循环索引参与行为、表变量存在其他引用，或发现对当前行的赋值、取地址等操作时，跳过该表。工具不会把相同预期但不同输入的用例视为重复，也不根据代码覆盖率判断冗余。
+
+**真实时间等待。** 从测试入口出发，追踪直接调用的本包 `_test.go` 函数和方法、`t.Run` 回调及立即调用的函数字面量，识别实际绑定到标准库 `time.Sleep` 的调用。支持导入别名和点导入，同名自定义函数不匹配。静态确定为非正数的等待不报告；其他调用提示可能等待真实时间。
+
+直接传给 `testing/synctest.Test` 的函数字面量或本包测试 helper 按虚拟时间分析；同一 helper 同时从普通测试调用时仍会报告真实等待。参见 [synctest 文档](https://pkg.go.dev/testing/synctest)。每个等待位置每条规则最多报告一次。
+
+第一轮不解析函数变量别名、接口动态调用、任意库回调及 `t.Cleanup` 回调，也不进入生产文件或第三方 helper。等待检查只覆盖 `time.Sleep`，不会把 `time.After`、超时保护或 channel 等待直接判为违规。这些检查提供有限的静态证据，不能证明测试意图正确、测试完全隔离或不存在其他等待。
+
 ## 报告和退出码
 
 | 退出码 | 含义 |
@@ -269,6 +315,7 @@ JSON 报告包含 `environment`、`build_tags`、`packages`、`files` 和 `diagn
 | 文件结构 | `missing_required_file`、`missing_required_directory`、`invalid_required_file`、`invalid_required_directory` |
 | 注释 | `comment_budget_exceeded`、`missing_required_comment`、`invalid_comment_format`、`comment_line_too_long` |
 | 文件位置 | `forbidden_file_location` |
+| 测试质量 | `duplicate_test_body`、`duplicate_test_case`、`real_time_wait` |
 
 工具按文件、位置、规则 ID 和诊断代码排序，便于 CI 比较。格式诊断的目标包和层名为空；文件结构诊断的来源包也为空。运行失败时错误写入 stderr，不输出成功报告。
 
@@ -280,7 +327,7 @@ JSON 报告包含 `environment`、`build_tags`、`packages`、`files` 和 `diagn
 - 根据加载器提供的模块身份识别外部依赖，支持本地 `replace`。只检查本模块的直接导入，不递归约束第三方内部依赖。
 - cgo 的 `C` 导入跳过，不检查 C 侧依赖。
 - 使用只读模块加载，不自动修改目标项目的 `go.mod`。依赖需可下载或已缓存。
-- 解析有效源码以获取导入位置，不做完整类型检查。请另行运行 `go test` 和 `go vet`；本工具不能证明代码可编译，也不覆盖其他构建环境。
+- 基础规则解析源码，测试质量规则额外加载选中测试包的类型信息。请另行运行 `go test` 和 `go vet`；静态检查不执行测试，也不覆盖其他构建环境。
 
 项目加载使用 [go/packages](https://pkg.go.dev/golang.org/x/tools/go/packages)，配置解析使用 [BurntSushi/toml](https://pkg.go.dev/github.com/BurntSushi/toml)。
 
@@ -292,4 +339,4 @@ go vet ./...
 go run ./cmd/go-static-checker -config rules.toml
 ```
 
-当前已支持分层依赖、自定义源码格式、注释约束、文件位置和必需文件结构。后续 PR 可增加测试依赖检查、多模块支持和基于类型信息的调用规则。新增规则类型前，先定义配置语义、诊断代码和正反例。
+当前已支持分层依赖、自定义源码格式、注释约束、文件位置、必需文件结构和测试质量检查。后续 PR 可增加测试验证关系分析、多模块支持和基于类型信息的调用规则。新增规则类型前，先定义配置语义、诊断代码和正反例。

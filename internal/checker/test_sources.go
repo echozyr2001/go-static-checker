@@ -22,6 +22,9 @@ func loadFormatTestSources(ctx context.Context, c config.Config, env []string,
 	own map[string]*packages.Package) ([]source, error) {
 	enabled := false
 	for _, r := range c.Rules {
+		if r.Tests != nil {
+			enabled = true
+		}
 		if r.Format != nil && r.Format.IncludeTests || r.Comments != nil && *r.Comments.IncludeTests {
 			enabled = true
 		}
@@ -63,6 +66,9 @@ func loadFormatTestSources(ctx context.Context, c config.Config, env []string,
 		selected := false
 		for _, r := range c.Rules {
 			var patterns []string
+			if r.Tests != nil {
+				patterns = r.Tests.Packages
+			}
 			if r.Format != nil && r.Format.IncludeTests {
 				patterns = r.Format.Packages
 			}

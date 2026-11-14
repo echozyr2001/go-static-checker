@@ -172,8 +172,19 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 	}
 	sources = append(sources, testSources...)
 	report.Files += len(testSources)
+	analysisFiles, err := loadTestAnalysis(ctx, c, env, own)
+	if err != nil {
+		return report, err
+	}
 	for _, r := range c.Rules {
 		switch r.Kind {
+		case "test_duplicates", "test_waiting":
+			diagnostics, err := checkTestQuality(r, analysisFiles)
+			if err != nil {
+				return report, err
+			}
+			report.Diagnostics = append(report.Diagnostics, diagnostics...)
+			continue
 		case "comment_budget", "required_comments", "comment_format", "comment_line_length":
 			diagnostics, err := checkComments(r, sources)
 			if err != nil {

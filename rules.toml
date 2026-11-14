@@ -10,12 +10,14 @@ includes = [
   "rules/comment_format.toml",
   "rules/comment_line_length.toml",
   "rules/file_policy.toml",
+  "rules/test_duplicates.toml",
+  "rules/test_waiting.toml",
 ]
 
 [project]
 # 相对于本配置文件，必须包含 go.mod。
 root = "."
-# 当前版本仅支持生产源码；生成代码照常检查。
+# 分层规则仅检查生产源码；测试由各类规则单独选择。
 include_tests = false
 # 按当前 GOOS、GOARCH 和 CGO_ENABLED 选择文件，不额外启用构建标签。
 build_tags = []
