@@ -20,6 +20,78 @@ go build -o bin/go-static-checker ./cmd/go-static-checker
 
 除注明为可选的字段外，示例字段均须显式填写。未知字段、缺失字段、规则类型不适用的字段和无效枚举值均报错。`schema_version = 1` 的分层配置保持兼容；新增规则使用独立的参数表。
 
+### 拆分规则文件
+
+主文件可以用顶层 `includes` 引用多个规则文件。命令行仍使用 `-config rules.toml`，工具合并所有规则后只加载一次项目。
+
+仓库自身的入口为 [rules.toml](rules.toml)，项目设置保留在入口中，规则按类型存放在 `rules/`：
+
+| 文件 | 规则 ID |
+|---|---|
+| [layer_dependencies.toml](rules/layer_dependencies.toml) | ARCH001 |
+| [source_format.toml](rules/source_format.toml) | FMT001、FMT002 |
+| [file_layout.toml](rules/file_layout.toml) | LAYOUT001 |
+| [comment_budget.toml](rules/comment_budget.toml) | COMMENT001 |
+| [required_comments.toml](rules/required_comments.toml) | COMMENT002 |
+| [comment_format.toml](rules/comment_format.toml) | COMMENT003 |
+| [comment_line_length.toml](rules/comment_line_length.toml) | COMMENT004 |
+| [file_policy.toml](rules/file_policy.toml) | DOC001 |
+
+主文件示例：
+
+```toml
+schema_version = 1
+includes = ["rules/format.toml", "rules/layout.toml"]
+
+[project]
+root = "."
+include_tests = false
+build_tags = []
+```
+
+`rules/format.toml` 示例：
+
+```toml
+schema_version = 1
+
+[[rules]]
+id = "FMT001"
+kind = "source_format"
+description = "限制源码行宽"
+severity = "error"
+
+[rules.format]
+packages = ["..."]
+max_line_length = 120
+tab_width = 4
+file_name_pattern = ""
+package_name_pattern = ""
+```
+
+`rules/layout.toml` 示例：
+
+```toml
+schema_version = 1
+
+[[rules]]
+id = "LAYOUT001"
+kind = "file_layout"
+description = "必须包含根目录说明文件"
+severity = "error"
+
+[rules.layout]
+required_files = ["README.md"]
+required_directories = []
+```
+
+每份文件都必须声明 `schema_version = 1`。只有主文件可以声明 `[project]`；被引用文件填写 `[[rules]]`，也可以通过自己的顶层 `includes` 继续引用其他文件。`includes` 必须写在表定义之前，避免意外成为 `[project]` 或规则表中的字段。
+
+`includes` 中的相对路径基于声明它的文件所在目录，也支持绝对路径。通过符号链接引用文件时，相对路径基于链接所在目录。规则里的包路径仍基于模块，文件路径仍基于主文件的 `project.root`；把规则移到子目录不会改变检查范围。工具不自动搜索子目录配置，也不展开通配符或环境变量。
+
+加载顺序为当前文件的规则在先，再按 `includes` 数组顺序递归加载。规则 ID 必须全局唯一，没有覆盖或优先级机制。重复引用（包括规范化路径和符号链接指向同一文件）、循环引用、缺失文件及无效配置都会返回退出码 `2`，错误包含文件路径和引用链。
+
+单个文件可以只负责引用其他文件，但合并后至少需要一条规则。省略 `includes` 或设为 `[]` 时，保留原有单文件用法。
+
 ### 分层依赖
 
 ```toml
@@ -143,7 +215,7 @@ required_directories = ["internal/domain", "internal/service"]
 
 ### 注释预算、说明和格式
 
-完整配置见根目录 [rules.toml](rules.toml) 中的 `COMMENT001` 至 `COMMENT004`。每种规则使用独立的 `[rules.comments]`，所有行为字段必须显式填写。
+完整配置见 `rules/` 中的 [注释预算](rules/comment_budget.toml)、[必需说明](rules/required_comments.toml)、[注释格式](rules/comment_format.toml) 和 [注释列宽](rules/comment_line_length.toml)。每种规则使用独立的 `[rules.comments]`，所有行为字段必须显式填写。
 
 | 规则类型 | 检查内容 |
 |---|---|

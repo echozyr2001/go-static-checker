@@ -198,3 +198,82 @@ require_nonempty = true
 		}
 	}
 }
+
+func TestIncludedRulesCLI(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"go.mod":    "module example.com/app\n\ngo 1.24\n",
+		"app.go":    "package app\n",
+		"README.md": "text",
+		"rules.toml": `schema_version = 1
+includes = ["rules/files.toml"]
+[project]
+root = "."
+include_tests = false
+build_tags = []
+[[rules]]
+id = "ROOT"
+kind = "file_layout"
+description = "root requirement"
+severity = "error"
+[rules.layout]
+required_files = ["missing.txt"]
+required_directories = []
+`,
+		"rules/files.toml": `schema_version = 1
+[[rules]]
+id = "INCLUDED"
+kind = "file_layout"
+description = "included requirement"
+severity = "error"
+[rules.layout]
+required_files = ["README.md", "other.txt"]
+required_directories = []
+`,
+	}
+	for name, body := range files {
+		filename := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(filename), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filename, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out, stderr bytes.Buffer
+	args := []string{"-config", filepath.Join(root, "rules.toml"), "-format", "json"}
+	if code := run(args, &out, &stderr); code != 1 || stderr.Len() != 0 {
+		t.Fatalf("exit=%d out=%s err=%s", code, &out, &stderr)
+	}
+	var report checker.Report
+	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Packages != 1 || report.Files != 1 || len(report.Diagnostics) != 2 {
+		t.Fatal(report)
+	}
+	for i, want := range []struct{ id, file string }{{"ROOT", "missing.txt"}, {"INCLUDED", "other.txt"}} {
+		d := report.Diagnostics[i]
+		if d.RuleID != want.id || d.File != want.file || d.Code != "missing_required_file" {
+			t.Fatal(d)
+		}
+	}
+	for _, name := range []string{"missing.txt", "other.txt"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("text"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out.Reset()
+	stderr.Reset()
+	if code := run(args, &out, &stderr); code != 0 || stderr.Len() != 0 {
+		t.Fatalf("exit=%d out=%s err=%s", code, &out, &stderr)
+	}
+	if err := os.Remove(filepath.Join(root, "rules/files.toml")); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	stderr.Reset()
+	if code := run(args, &out, &stderr); code != 2 || out.Len() != 0 || !strings.Contains(stderr.String(), "files.toml") {
+		t.Fatalf("exit=%d out=%s err=%s", code, &out, &stderr)
+	}
+}

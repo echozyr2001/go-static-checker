@@ -1,0 +1,29 @@
+schema_version = 1
+
+[[rules]]
+id = "COMMENT003"
+kind = "comment_format"
+description = "声明说明以名称开头，内部注释使用双斜杠，禁止行尾注释"
+severity = "error"
+
+[rules.comments]
+packages = ["..."]
+declarations = ["function", "method", "struct", "interface"]
+visibility = "all"
+include_tests = false
+include_generated = false
+exclude_go_directives = true
+# 正则整串匹配去掉注释标记及一个可选空格后的单行文本。
+# 文档说明仅检查首行；结构体字段说明归入 body，不使用外层类型名称。
+[rules.comments.doc]
+style = "line"
+require_name_prefix = true
+# 名称之后必须有空白分隔及非空说明，避免只重复声明名称。
+require_text_after_name = true
+
+[rules.comments.body]
+style = "line"
+line_pattern = '\S.*'
+
+[rules.comments.trailing]
+allowed = false
