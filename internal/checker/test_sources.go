@@ -18,7 +18,7 @@ import (
 )
 
 // loadFormatTestSources discovers build-selected tests without their imports.
-func loadFormatTestSources(ctx context.Context, c config.Config, env []string,
+func loadFormatTestSources(ctx context.Context, c config.Config, env, patterns []string,
 	own map[string]*packages.Package) ([]source, error) {
 	enabled := false
 	for _, r := range c.Rules {
@@ -29,8 +29,9 @@ func loadFormatTestSources(ctx context.Context, c config.Config, env []string,
 	if !enabled {
 		return nil, nil
 	}
-	cmd := exec.CommandContext(ctx, "go", "list", "-json", "-mod=readonly",
-		"-tags="+strings.Join(c.Project.BuildTags, ","), "./...")
+	args := append([]string{"list", "-json", "-mod=readonly",
+		"-tags=" + strings.Join(c.Project.BuildTags, ",")}, patterns...)
+	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir, cmd.Env = c.Project.Root, env
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -77,7 +78,7 @@ func loadFormatTestSources(ctx context.Context, c config.Config, env []string,
 			continue
 		}
 		for _, name := range append(p.TestGoFiles, p.XTestGoFiles...) {
-			filename := filepath.Join(c.Project.Root, filepath.FromSlash(rel), name)
+			filename := filepath.Join(owner.Module.Dir, filepath.FromSlash(rel), name)
 			content, err := os.ReadFile(filename)
 			if err != nil {
 				return nil, err

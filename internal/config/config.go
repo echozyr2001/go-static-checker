@@ -14,7 +14,7 @@ type Config struct {
 	Rules         []Rule  `toml:"rules"`
 }
 
-// Project selects the module root and build conditions.
+// Project selects the module or workspace root and build conditions.
 type Project struct {
 	Root         string   `toml:"root"`
 	IncludeTests *bool    `toml:"include_tests"`

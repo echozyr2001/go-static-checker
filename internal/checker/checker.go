@@ -10,7 +10,6 @@ import (
 	"go/parser"
 	"go/token"
 	"golang.org/x/tools/go/packages"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,27 +73,16 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 	if err := c.Validate(); err != nil {
 		return report, err
 	}
-	root := c.Project.Root
-	modfile := filepath.Join(root, "go.mod")
-	if _, err := os.Stat(modfile); err != nil {
-		return report, err
-	}
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == "vendor") {
-			return filepath.SkipDir
-		}
-		if !d.IsDir() && d.Name() == "go.mod" && p != modfile {
-			return fmt.Errorf("nested modules are unsupported: %s", p)
-		}
-		return nil
-	})
+	root, err := filepath.Abs(c.Project.Root)
 	if err != nil {
 		return report, err
 	}
-	env := append(os.Environ(), "GOWORK=off", "GO111MODULE=on")
+	c.Project.Root = root
+	patterns, modules, work, err := projectInputs(root)
+	if err != nil {
+		return report, err
+	}
+	env := append(os.Environ(), "GOWORK="+work, "GO111MODULE=on")
 	cmd := exec.CommandContext(ctx, "go", "env", "-json", "GOOS", "GOARCH", "CGO_ENABLED", "GOVERSION")
 	cmd.Dir, cmd.Env = root, env
 	out, err := cmd.Output()
@@ -109,7 +97,7 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedImports |
 			packages.NeedDeps | packages.NeedModule,
 		BuildFlags: []string{"-mod=readonly", "-tags=" + strings.Join(c.Project.BuildTags, ",")},
-	}, "./...")
+	}, patterns...)
 	if err != nil {
 		return report, err
 	}
@@ -128,7 +116,7 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 	}
 	own := map[string]*packages.Package{}
 	for _, p := range pkgs {
-		if p.Module == nil || filepath.Clean(p.Module.GoMod) != filepath.Clean(modfile) {
+		if p.Module == nil || !modules[filepath.Clean(p.Module.GoMod)] {
 			return report, fmt.Errorf("unexpected module identity for %s", p.PkgPath)
 		}
 		own[p.PkgPath] = p
@@ -166,7 +154,7 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 			report.Files++
 		}
 	}
-	testSources, err := loadFormatTestSources(ctx, c, env, own)
+	testSources, err := loadFormatTestSources(ctx, c, env, patterns, own)
 	if err != nil {
 		return report, err
 	}
