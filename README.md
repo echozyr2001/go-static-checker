@@ -2,7 +2,7 @@
 
 ## 用途
 
-读取 TOML 规则，检查 Go 项目的分层依赖、源码格式、注释和文件位置。支持单模块项目，格式与注释规则可包含测试源码，输出文本或 JSON 报告。
+读取 TOML 规则，检查 Go 项目的分层依赖、源码格式、注释、文件位置和调用链契约。支持单模块项目，格式与注释规则可包含测试源码，输出文本或 JSON 报告。
 
 ## 运行
 
@@ -22,7 +22,7 @@ go build -o bin/go-static-checker ./cmd/go-static-checker
 
 ### 拆分规则文件
 
-主文件可以用顶层 `includes` 引用多个规则文件。命令行仍使用 `-config rules.toml`，工具合并所有规则后只加载一次项目。
+主文件可以用顶层 `includes` 引用多个规则文件。命令行仍使用 `-config rules.toml`，工具先合并全部规则；调用链契约会额外加载类型信息并构建共享调用模型。
 
 仓库自身的入口为 [rules.toml](rules.toml)，项目设置保留在入口中，规则按类型存放在 `rules/`：
 
@@ -36,6 +36,7 @@ go build -o bin/go-static-checker ./cmd/go-static-checker
 | [comment_format.toml](rules/comment_format.toml) | COMMENT003 |
 | [comment_line_length.toml](rules/comment_line_length.toml) | COMMENT004 |
 | [file_policy.toml](rules/file_policy.toml) | DOC001 |
+| [call_contract.toml](rules/call_contract.toml) | CALL001 |
 
 主文件示例：
 
@@ -252,11 +253,49 @@ max(min_allowed_comment_lines, ceil((C + K) * max_comment_percent / 100))
 
 目前只支持 `default = "deny"` 和 `follow_directory_symlinks = false`。扫描相对于 `project.root`，不受 Go 构建标签影响。不遍历目录符号链接；文件链接自身或最终目标的扩展名匹配时，按链接所在位置检查。断链、权限等读取错误返回退出码 `2`。此规则控制允许位置，必需文件仍由 `file_layout` 指定。
 
+### 调用链契约
+
+`call_contract` 限制指定入口及其静态可达函数调用的 API。规则完全写在 TOML 中，无须在 Go 源码中添加注解。
+
+```toml
+[[rules]]
+id = "CALL001"
+kind = "call_contract"
+description = "业务入口禁止退出进程或显式 panic"
+severity = "error"
+
+[rules.contract]
+entries = ["example.com/app/service::Handle", "example.com/app/service::Worker.Run"]
+forbidden = ["os::Exit", "builtin::panic"]
+trusted = ["strings::*"]
+on_unknown = "error"
+```
+
+四个契约字段均须填写。`entries` 和 `forbidden` 不能为空，`trusted = []` 表示不信任任何未分析的外部函数。符号使用完整导入路径和 `::`，方法写成 `类型名.方法名`，指针接收者不写 `*`。`包路径::*` 匹配该包的全部函数和方法，不包含子包。每个入口选择器必须匹配至少一个已加载声明，否则报告 `entry_not_found`，不会以空结果通过。
+
+前端加载当前构建环境中的生产包，完成类型检查后生成 SSA 调用模型。模型包含跨包直接调用、具体类型方法、泛型实例、可静态确定目标的闭包与函数别名，以及 `go` 和 `defer` 调用。递归按已访问函数去重。证据记录从入口到违规或未知调用的调用链及源码位置；位置忽略 `//line` 重映射。
+
+接口派发、无法解析的函数值和本模块中没有 Go 函数体的声明会产生 `unresolved_call`。外部依赖只加载类型，不分析函数体；未信任的外部调用产生 `unmodeled_call`。`trusted` 只豁免无法获得函数体的外部调用，不能覆盖禁止调用、动态调用或跳过已有函数体。实际使用的信任项列入 `assumptions`，包括其符号和调用位置。信任一个外部函数，也是假设其内部调用和回调满足本契约；工具不会验证这个假设。
+
+每个入口有独立结果：
+
+| 状态 | 含义 |
+|---|---|
+| `satisfied` | 在模型范围和已列出的信任假设下，没有发现禁止调用或未知调用 |
+| `violated` | 发现静态可达的禁止调用；仍可能同时存在未知调用 |
+| `unknown` | 没有发现禁止调用，但分析存在缺口 |
+
+`complete = false` 表示存在缺口，即使状态已为 `violated` 也保留。`on_unknown = "error"` 使未完成的检查返回退出码 `2`，同时输出诊断和证据报告；`"warning"` 保留未知结果及 warning 诊断，不单独阻止 CI。禁止调用的严重程度由规则的 `severity` 决定。JSON 的 `verifications` 数组保存结果、假设和证据，文本报告也输出状态和信任符号。
+
+本轮的分层借鉴 [Verus 的编译与验证流水线](https://github.com/verus-lang/verus/blob/main/source/CODE.md)：Go 前端生成独立模型，规则求值器检查模型，报告层输出结果。显式信任边界参考 [Verus 的可信基础说明](https://verus-lang.github.io/verus/guide/tcb.html)。当前后端使用图可达性分析，尚未接入 SMT，不提供完整的 Go 形式化证明。
+
+契约范围从选定函数体开始，不涵盖调用入口前的包初始化、运行时隐式调用、反射目标、C 代码或测试源码。反射 API 等外部调用默认未知，只有显式信任才放行。`builtin::panic` 检查显式 panic，不证明不存在越界、空指针等运行时 panic。其他内建操作仅检查 SSA 中保留的调用；常量折叠掉的操作不在调用图内。分析不证明路径可执行，也不判断 goroutine 的调度顺序，因此静态可达违规可能来自实际不会执行的分支。对完整进程的安全保证需要额外建模。
+
 ## 报告和退出码
 
 | 退出码 | 含义 |
 |---|---|
-| 0 | 检查完成，没有 error 级违规 |
+| 0 | 没有 error 级违规或严格未知结果；warning 级未知仍在报告中 |
 | 1 | 检查完成，存在 error 级违规 |
 | 2 | 配置错误、项目加载失败或检查未完成 |
 
@@ -269,8 +308,9 @@ JSON 报告包含 `environment`、`build_tags`、`packages`、`files` 和 `diagn
 | 文件结构 | `missing_required_file`、`missing_required_directory`、`invalid_required_file`、`invalid_required_directory` |
 | 注释 | `comment_budget_exceeded`、`missing_required_comment`、`invalid_comment_format`、`comment_line_too_long` |
 | 文件位置 | `forbidden_file_location` |
+| 调用链契约 | `forbidden_call`、`unresolved_call`、`unmodeled_call`、`entry_not_found` |
 
-工具按文件、位置、规则 ID 和诊断代码排序，便于 CI 比较。格式诊断的目标包和层名为空；文件结构诊断的来源包也为空。运行失败时错误写入 stderr，不输出成功报告。
+工具按文件、位置、规则 ID 和诊断代码排序，便于 CI 比较。格式诊断的目标包和层名为空；文件结构诊断的来源包也为空。配置或加载失败时错误写入 stderr，不输出报告。契约未知结果会输出报告，再按 `on_unknown` 决定退出码。
 
 ## 检查边界
 
@@ -280,7 +320,7 @@ JSON 报告包含 `environment`、`build_tags`、`packages`、`files` 和 `diagn
 - 根据加载器提供的模块身份识别外部依赖，支持本地 `replace`。只检查本模块的直接导入，不递归约束第三方内部依赖。
 - cgo 的 `C` 导入跳过，不检查 C 侧依赖。
 - 使用只读模块加载，不自动修改目标项目的 `go.mod`。依赖需可下载或已缓存。
-- 解析有效源码以获取导入位置，不做完整类型检查。请另行运行 `go test` 和 `go vet`；本工具不能证明代码可编译，也不覆盖其他构建环境。
+- 普通规则解析源码以获取位置，不做完整类型检查；启用调用链契约时，额外检查生产包类型并构建 SSA。请另行运行 `go test` 和 `go vet`；检查结果不覆盖其他构建环境。
 
 项目加载使用 [go/packages](https://pkg.go.dev/golang.org/x/tools/go/packages)，配置解析使用 [BurntSushi/toml](https://pkg.go.dev/github.com/BurntSushi/toml)。
 
@@ -292,4 +332,4 @@ go vet ./...
 go run ./cmd/go-static-checker -config rules.toml
 ```
 
-当前已支持分层依赖、自定义源码格式、注释约束、文件位置和必需文件结构。后续 PR 可增加测试依赖检查、多模块支持和基于类型信息的调用规则。新增规则类型前，先定义配置语义、诊断代码和正反例。
+当前已支持分层依赖、自定义源码格式、注释约束、文件位置、必需文件结构和调用链契约。后续 PR 可增加测试依赖检查、多模块支持和更精确的动态调用分析。新增规则类型前，先定义配置语义、诊断代码和正反例。

@@ -27,7 +27,7 @@ func TestLoadStrict(t *testing.T) {
 		{"unknown", "allow_stdlib", "allow_stdlbi", "unknown"},
 		{"missing bool", "allow_stdlib = true", "", "behavior"},
 		{"missing array", "allow_external = []", "", "required"},
-		{"unknown layer", "allow = [\"config\"]", "allow = [\"missing\"]", "unknown layer"},
+		{"unknown layer", "allow = [\"config\", \"analysis\"]", "allow = [\"missing\"]", "unknown layer"},
 		{"bad pattern", "cmd/...", "cmd/*", "invalid pattern"},
 		{"tests", "include_tests = false", "include_tests = true", "not supported"},
 		{"version", "schema_version = 1", "schema_version = 2", "schema_version"},

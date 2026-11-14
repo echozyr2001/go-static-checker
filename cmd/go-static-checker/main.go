@@ -49,6 +49,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		if err == nil {
+			for _, result := range report.Verifications {
+				var assumptions []string
+				for _, assumption := range result.Assumptions {
+					assumptions = append(assumptions, assumption.Symbol)
+				}
+				_, err = fmt.Fprintf(stdout, "%s %s: %s (complete=%t, assumptions=%v)\n",
+					result.RuleID, result.Entry, result.Status, result.Complete, assumptions)
+				if err != nil {
+					break
+				}
+			}
+		}
+		if err == nil {
 			_, err = fmt.Fprintf(stdout, "Checked %d packages, %d files (%s/%s, CGO_ENABLED=%s, %s, tags=%v)\n",
 				report.Packages, report.Files, report.Environment["GOOS"], report.Environment["GOARCH"],
 				report.Environment["CGO_ENABLED"], report.Environment["GOVERSION"], report.BuildTags)

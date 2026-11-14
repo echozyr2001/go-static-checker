@@ -1,6 +1,6 @@
 schema_version = 1
 
-# 分层依赖：cli → checker → config；cli 也可以直接读取 config。
+# 分层依赖：cli → checker → config、analysis；cli 也可以直接读取 config。
 # allow 仅授权直接导入，不传递授权。
 [[rules]]
 id = "ARCH001"
@@ -23,7 +23,7 @@ allow_external = []
 [[rules.layers]]
 name = "checker"
 packages = ["internal/checker/..."]
-allow = ["config"]
+allow = ["config", "analysis"]
 allow_external = ["golang.org/x/tools/go/packages"]
 
 [[rules.layers]]
@@ -31,3 +31,13 @@ name = "config"
 packages = ["internal/config/..."]
 allow = []
 allow_external = ["github.com/BurntSushi/toml"]
+
+[[rules.layers]]
+name = "analysis"
+packages = ["internal/analysis/..."]
+allow = []
+allow_external = [
+  "golang.org/x/tools/go/packages",
+  "golang.org/x/tools/go/ssa",
+  "golang.org/x/tools/go/ssa/ssautil",
+]

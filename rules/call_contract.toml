@@ -1,0 +1,13 @@
+schema_version = 1
+
+[[rules]]
+id = "CALL001"
+kind = "call_contract"
+description = "路径匹配函数及其调用链禁止退出进程或显式 panic"
+severity = "error"
+
+[rules.contract]
+entries = ["github.com/echozyr2001/go-static-checker/internal/config::Match"]
+forbidden = ["os::Exit", "builtin::panic"]
+trusted = ["strings::*"]
+on_unknown = "error"
