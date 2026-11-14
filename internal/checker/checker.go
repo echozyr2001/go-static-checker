@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/echozyr2001/go-static-checker/internal/analysis"
 	"github.com/echozyr2001/go-static-checker/internal/config"
 	"go/ast"
 	"go/parser"
@@ -36,11 +37,12 @@ type Diagnostic struct {
 
 // Report records the checked environment and rule violations.
 type Report struct {
-	Environment map[string]string `json:"environment"`
-	BuildTags   []string          `json:"build_tags"`
-	Packages    int               `json:"packages"`
-	Files       int               `json:"files"`
-	Diagnostics []Diagnostic      `json:"diagnostics"`
+	Environment   map[string]string `json:"environment"`
+	BuildTags     []string          `json:"build_tags"`
+	Packages      int               `json:"packages"`
+	Files         int               `json:"files"`
+	Diagnostics   []Diagnostic      `json:"diagnostics"`
+	Verifications []analysis.Result `json:"verifications,omitempty"`
 }
 
 type source struct {
@@ -58,8 +60,13 @@ type source struct {
 	}
 }
 
-// ExitCode returns 1 for error violations and 0 otherwise.
+// ExitCode returns 2 for strict unknowns, 1 for errors, and 0 otherwise.
 func (r Report) ExitCode() int {
+	for _, result := range r.Verifications {
+		if !result.Complete && result.OnUnknown == "error" {
+			return 2
+		}
+	}
 	for _, d := range r.Diagnostics {
 		if d.Severity == "error" {
 			return 1
@@ -172,8 +179,23 @@ func Run(ctx context.Context, c config.Config) (Report, error) {
 	}
 	sources = append(sources, testSources...)
 	report.Files += len(testSources)
+	var callModel analysis.Program
+	for _, r := range c.Rules {
+		if r.Contract != nil {
+			callModel, err = analysis.LoadGo(ctx, root, env, c.Project.BuildTags)
+			if err != nil {
+				return report, err
+			}
+			break
+		}
+	}
 	for _, r := range c.Rules {
 		switch r.Kind {
+		case "call_contract":
+			results, diagnostics := checkCallContract(r, callModel)
+			report.Verifications = append(report.Verifications, results...)
+			report.Diagnostics = append(report.Diagnostics, diagnostics...)
+			continue
 		case "comment_budget", "required_comments", "comment_format", "comment_line_length":
 			diagnostics, err := checkComments(r, sources)
 			if err != nil {

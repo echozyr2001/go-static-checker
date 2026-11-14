@@ -10,6 +10,7 @@ includes = [
   "rules/comment_format.toml",
   "rules/comment_line_length.toml",
   "rules/file_policy.toml",
+  "rules/call_contract.toml",
 ]
 
 [project]
